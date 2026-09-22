@@ -40,7 +40,7 @@ import { EColliderType, EConstraintType, ECharacterControllerType } from './phys
 import { PhysicsMaterial } from '.';
 
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
-export type IPhysicsEngineId = 'builtin' | 'cannon.js' | 'bullet' | 'physx' | string;
+export type IPhysicsEngineId = 'builtin' | 'cannon.js' | 'bullet' | 'physx' | 'rapier' | string;
 
 interface IPhysicsWrapperObject {
     PhysicsWorld?: Constructor<IPhysicsWorld>,

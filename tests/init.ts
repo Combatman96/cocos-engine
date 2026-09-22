@@ -1,3 +1,15 @@
+// jest-environment-jsdom does not provide TextEncoder/TextDecoder, but wasm-bindgen glue
+// (e.g. @dimforge/rapier3d-compat) constructs a TextDecoder unconditionally at module
+// evaluation time, so merely importing such a module would throw a ReferenceError.
+import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'util';
+
+if (typeof globalThis.TextDecoder === 'undefined') {
+    (globalThis as any).TextDecoder = NodeTextDecoder;
+}
+if (typeof globalThis.TextEncoder === 'undefined') {
+    (globalThis as any).TextEncoder = NodeTextEncoder;
+}
+
 jest.mock(
     'internal:constants',
     () => {

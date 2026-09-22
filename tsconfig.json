@@ -29,6 +29,7 @@
       "./@types/webGL.extras",
       "./@types/webGL2.extras",
       "./@types/webGPU",
+      "./@types/dispose-symbols",
       "./node_modules/@cocos/cannon/CANNON",
       "./node_modules/@types/jest/index",
 

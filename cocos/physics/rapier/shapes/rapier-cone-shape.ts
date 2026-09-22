@@ -22,26 +22,35 @@
  THE SOFTWARE.
 */
 
-import { IVec3Like } from '../../core';
+import { Vec3 } from '../../../core';
+import { ConeCollider } from '../../../../exports/physics-framework';
+import { IConeShape } from '../../spec/i-physics-shape';
+import { EAxisDirection } from '../../framework/physics-enum';
+import { RapierAxialShape } from './rapier-axial-shape';
+import { axisToRotation } from '../rapier-utils';
 
-export interface ICollisionMatrix {
-    [x: string]: number;
-}
+/** @mangle */
+export class RapierConeShape extends RapierAxialShape implements IConeShape {
+    get collider (): ConeCollider {
+        return this._collider as ConeCollider;
+    }
 
-export interface ICollisionGroup {
-    index: number,
-    name: string,
-}
+    protected onComponentSet (): void {
+        Vec3.copy(this._bakedScale, this._collider.node.worldScale);
+        axisToRotation(this._rotation, this.collider.direction);
+        this._desc = this.rapier.ColliderDesc.cone(this.halfHeight(), this.radius());
+        this._desc.setRotation(this._rotation);
+    }
 
-export interface IPhysicsConfig {
-    gravity?: IVec3Like;
-    allowSleep?: boolean;
-    fixedTimeStep?: number;
-    maxSubSteps?: number;
-    sleepThreshold?: number;
-    collisionMatrix?: ICollisionMatrix;
-    collisionGroups?: ICollisionGroup[];
-    autoSimulation?: boolean;
-    useNodeChains?: boolean;
-    physicsEngine?: 'builtin' | 'cannon.js' | 'bullet' | 'physx' | 'rapier' | string;
+    protected halfHeight (): number {
+        return this.scaledHalfHeight(this.collider.height);
+    }
+
+    protected radius (): number {
+        return this.scaledRadius(this.collider.radius);
+    }
+
+    protected direction (): EAxisDirection {
+        return this.collider.direction;
+    }
 }

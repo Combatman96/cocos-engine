@@ -117,6 +117,10 @@
             "modules": ["physics-physx", "physics-framework"],
             "dependentAssets": ["ba21476f-2866-4f81-9c4d-6e359316e448"]
         },
+        "physics-rapier": {
+            "modules": ["physics-rapier", "physics-framework"],
+            "dependentAssets": ["ba21476f-2866-4f81-9c4d-6e359316e448"]
+        },
         "physics-ammo": {
             "modules": ["physics-ammo", "physics-framework"],
             "dependentAssets": ["ba21476f-2866-4f81-9c4d-6e359316e448"]
@@ -785,6 +789,12 @@
         },
         "LOAD_PHYSX_MANUALLY": {
             "comment": "An internal constant to indicate whether we need to load physx wasm/asmjs module manually.",
+            "type": "boolean",
+            "value": false,
+            "internal": true
+        },
+        "LOAD_RAPIER_MANUALLY": {
+            "comment": "An internal constant to indicate whether we need to load rapier wasm module manually.",
             "type": "boolean",
             "value": false,
             "internal": true

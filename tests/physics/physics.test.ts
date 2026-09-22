@@ -4,9 +4,15 @@ import { physics, PhysicsMaterial, PhysicsSystem } from "../../exports/physics-f
 import "../../exports/physics-physx";
 import "../../exports/physics-builtin";
 import "../../exports/physics-ammo";
+// NOTE: physics-cannon must stay LAST. `selector.register` makes the last backend
+// registered before world creation the active one, and this file constructs the world at
+// module scope (below) -- before `beforeAll` has awaited the wasm backends. Cannon is pure
+// JS with no async init, so it is the only safe default for that module-scope world.
+import "../../exports/physics-rapier";
 import "../../exports/physics-cannon";
 import { initPhysXLibs } from '../../cocos/physics/physx/physx-adapter';
 import { waitForAmmoInstantiation } from "../../cocos/physics/bullet/instantiated";
+import { waitForRapierInstantiation } from "../../cocos/physics/rapier/instantiated";
 import EventTest from "./event";
 import RaycastTest from "./raycast";
 import SweepTest from "./sweep";
@@ -23,6 +29,7 @@ import { builtinResMgr } from "../../exports/base";
 beforeAll(async () => {
     await waitForAmmoInstantiation();
     await initPhysXLibs();
+    await waitForRapierInstantiation();
 });
 
 game.emit(Game.EVENT_PRE_SUBSYSTEM_INIT);
@@ -40,7 +47,7 @@ test(`physics test | selector`, done => {
 
 export interface PhysicsTestEnv {
     rootNode: Node;
-    backendId: 'builtin' | 'physx' | 'bullet' | 'cannon.js';
+    backendId: 'builtin' | 'physx' | 'bullet' | 'cannon.js' | 'rapier';
 }
 
 describe.each(Object.keys(physics.selector.backend))(
@@ -79,7 +86,10 @@ describe.each(Object.keys(physics.selector.backend))(
 
     RaycastTest(env);
 
-    SweepTest(env);
+    // Shape sweeps are not implemented by the rapier backend yet.
+    if (id !== 'rapier') {
+        SweepTest(env);
+    }
 
     if (id === 'builtin') {
         return;
@@ -94,6 +104,12 @@ describe.each(Object.keys(physics.selector.backend))(
     FilterTest(env);
 
     DynamicTest(env);
+
+    // Constraints and character controllers are not implemented by the rapier backend yet,
+    // so their wrapper slots are unregistered and degrade to warn-and-noop stubs.
+    if (id === 'rapier') {
+        return;
+    }
 
     ConstraintTest(env);
 
