@@ -180,4 +180,76 @@ describe('rapier extras', () => {
         expect(found).toContain('inside');
         expect(found).not.toContain('outside');
     });
+
+    test('debug render buffers and snapshots are reachable', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { rapierDebugRenderBuffers, rapierTakeSnapshot } = require('../../cocos/physics/rapier/extras');
+
+        const node = new Node('box');
+        scene.addChild(node);
+        node.addComponent(physics.BoxCollider);
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        const buffers = rapierDebugRenderBuffers();
+        expect(buffers).not.toBeNull();
+        expect(buffers.vertices.length).toBeGreaterThan(0);
+        expect(buffers.colors.length).toBeGreaterThan(0);
+
+        const snapshot = rapierTakeSnapshot();
+        expect(snapshot).not.toBeNull();
+        expect(snapshot.byteLength).toBeGreaterThan(0);
+    });
+
+    test('spring joint is created and destroyed cleanly', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { createRapierSpringJoint, destroyRapierJoint } = require('../../cocos/physics/rapier/extras');
+
+        const a = new Node('a');
+        const b = new Node('b');
+        scene.addChild(a);
+        scene.addChild(b);
+        a.addComponent(physics.BoxCollider);
+        b.addComponent(physics.BoxCollider);
+        const rbA = a.addComponent(physics.RigidBody) as physics.RigidBody;
+        const rbB = b.addComponent(physics.RigidBody) as physics.RigidBody;
+        rbA.type = physics.RigidBody.Type.DYNAMIC;
+        rbB.type = physics.RigidBody.Type.DYNAMIC;
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        const world = (PhysicsSystem.instance.physicsWorld as any).impl;
+        const baseline = world.impulseJoints.len();
+
+        const handle = createRapierSpringJoint(rbA, rbB, { restLength: 2, stiffness: 10, damping: 1 });
+        expect(handle).not.toBeNull();
+        expect(world.impulseJoints.len()).toBe(baseline + 1);
+
+        destroyRapierJoint(handle);
+        expect(world.impulseJoints.len()).toBe(baseline);
+    });
+
+    test('character tuning exposes autostep, snap-to-ground and slide', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { getRapierCharacterTuning } = require('../../cocos/physics/rapier/extras');
+
+        const node = new Node('cct');
+        scene.addChild(node);
+        const cct = node.addComponent(physics.CapsuleCharacterController) as physics.CapsuleCharacterController;
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        const tuning = getRapierCharacterTuning(cct);
+        expect(tuning).not.toBeNull();
+
+        tuning.snapToGroundDistance = 0.3;
+        expect(tuning.snapToGroundDistance).toBeCloseTo(0.3, 5);
+        tuning.snapToGroundDistance = null;
+        expect(tuning.snapToGroundDistance).toBeNull();
+
+        tuning.slideEnabled = false;
+        expect(tuning.slideEnabled).toBe(false);
+
+        tuning.autostep = { maxHeight: 0.4, minWidth: 0.2, includeDynamicBodies: false };
+        expect(tuning.autostep.maxHeight).toBeCloseTo(0.4, 5);
+        tuning.autostep = null;
+        expect(tuning.autostep).toBeNull();
+    });
 });

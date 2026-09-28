@@ -22,16 +22,19 @@
  THE SOFTWARE.
 */
 
-// Pure re-export barrel: no top-level statements, so unreferenced exports tree-shake away.
-export * from './rapier-access';
-export * from './rapier-enums';
-export * from './rapier-solver-config';
-export * from './rapier-body-tuning';
-export * from './rapier-collider-tuning';
-export * from './rapier-hooks';
-export * from './rapier-events';
-export * from './rapier-queries';
-export * from './rapier-debug-render';
-export * from './rapier-snapshot';
-export * from './rapier-joints';
-export * from './rapier-character';
+import { getRapierWorld } from './rapier-access';
+
+/**
+ * Raw debug geometry for the whole world, for projects that want to draw it themselves
+ * rather than through `EPhysicsDrawFlags`.
+ *
+ * The layout is a flat line list: 3 floats per vertex, 2 vertices per line, with one RGBA
+ * colour per vertex. The arrays belong to Rapier's debug pipeline and are re-wrapped on
+ * each call, so copy them if they need to outlive the current step.
+ */
+export function rapierDebugRenderBuffers (): { vertices: Float32Array; colors: Float32Array } | null {
+    const world = getRapierWorld();
+    if (!world) return null;
+    const buffers = world.debugRender();
+    return { vertices: buffers.vertices, colors: buffers.colors };
+}
