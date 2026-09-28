@@ -97,4 +97,49 @@ describe('rapier internals', () => {
         expect(hit).toBe(false);
         expect(Number.isNaN(PhysicsSystem.instance.sweepCastClosestResult.distance)).toBe(false);
     });
+
+    test('point-to-point constraint binds to the world anchor body when connectedBody is null', () => {
+        const node = new Node('anchored');
+        scene.addChild(node);
+        node.addComponent(physics.BoxCollider);
+        const rb = node.addComponent(physics.RigidBody) as physics.RigidBody;
+        rb.type = physics.RigidBody.Type.DYNAMIC;
+        const c = node.addComponent(physics.PointToPointConstraint) as physics.PointToPointConstraint;
+        c.pivotA = new Vec3(0, 1, 0);
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        // Rapier's createImpulseJoint needs two real bodies and has no getFixedBody()
+        // equivalent, so a null connectedBody must resolve to the world's anchor body.
+        const impl = (c as any)._constraint.impl;
+        expect(impl).not.toBeNull();
+        expect(impl.isValid()).toBe(true);
+    });
+
+    test('rebinding connectedBody does not leak the previous joint', () => {
+        const a = new Node('a');
+        const b = new Node('b');
+        scene.addChild(a);
+        scene.addChild(b);
+        a.addComponent(physics.BoxCollider);
+        b.addComponent(physics.BoxCollider);
+        const rbA = a.addComponent(physics.RigidBody) as physics.RigidBody;
+        const rbB = b.addComponent(physics.RigidBody) as physics.RigidBody;
+        rbA.type = physics.RigidBody.Type.DYNAMIC;
+        rbB.type = physics.RigidBody.Type.DYNAMIC;
+        const c = a.addComponent(physics.PointToPointConstraint) as physics.PointToPointConstraint;
+        const dt = PhysicsSystem.instance.fixedTimeStep;
+        director.tick(dt);
+
+        const world = (PhysicsSystem.instance.physicsWorld as any).impl;
+        const baseline = world.impulseJoints.len();
+
+        // null -> body -> null. Each rebind must remove the old joint before making a new
+        // one, otherwise the joint set grows every time.
+        c.connectedBody = rbB;
+        director.tick(dt);
+        c.connectedBody = null;
+        director.tick(dt);
+
+        expect(world.impulseJoints.len()).toBe(baseline);
+    });
 });

@@ -35,10 +35,11 @@ import { RapierSharedBody } from './rapier-shared-body';
 import { RapierContactEquation } from './rapier-contact-equation';
 import { RapierCache, CC_V3_0, CC_V3_1 } from './rapier-cache';
 import { toQueryFilterFlags, toQueryGroups } from './rapier-utils';
-import { RAPIER_MAX_SWEEP_HITS } from './rapier-enum';
+import { ERapierBodyType, RAPIER_MAX_SWEEP_HITS } from './rapier-enum';
 import { R, assertRapierReady } from './instantiated';
 import type { RapierShape } from './shapes/rapier-shape';
 import type { RapierRigidBody } from './rapier-rigid-body';
+import type { RapierConstraint } from './constraints/rapier-constraint';
 
 /** A pair of touching shapes, plus how many steps it has been touching. */
 interface IRapierPairItem {
@@ -53,6 +54,7 @@ export class RapierWorld implements IPhysicsWorld {
     private _eventQueue: RAPIER.EventQueue;
 
     readonly bodies: RapierSharedBody[] = [];
+    readonly constraints: RapierConstraint[] = [];
 
     /**
      * Pairs currently touching. PERSISTENT across steps.
@@ -85,6 +87,7 @@ export class RapierWorld implements IPhysicsWorld {
     private _debugDrawConstraintSize = 0.3;
     private _allowSleep = true;
     private _destroyed = false;
+    private _anchorBody: RAPIER.RigidBody | null = null;
 
     constructor () {
         assertRapierReady('new RapierWorld()');
@@ -191,6 +194,9 @@ export class RapierWorld implements IPhysicsWorld {
 
     syncSceneToPhysics (): void {
         if (this._destroyed) return;
+        for (let i = 0; i < this.constraints.length; i++) {
+            this.constraints[i].flushRebuild();
+        }
         for (let i = 0; i < this.bodies.length; i++) {
             this.bodies[i].syncSceneToPhysics();
         }
@@ -210,6 +216,29 @@ export class RapierWorld implements IPhysicsWorld {
 
     getSharedBody (node: Node, wrappedBody?: RapierRigidBody): RapierSharedBody {
         return RapierSharedBody.getSharedBody(node, this, wrappedBody);
+    }
+
+    /**
+     * A single static body every joint uses as its second parent when the Cocos
+     * `connectedBody` is null. Rapier has no equivalent of Bullet's shared fixed body, and
+     * `createImpulseJoint` requires two real bodies.
+     */
+    get anchorBody (): RAPIER.RigidBody {
+        if (!this._anchorBody) {
+            this._anchorBody = this._world.createRigidBody(
+                new R.RigidBodyDesc(ERapierBodyType.FIXED as RAPIER.RigidBodyType),
+            );
+        }
+        return this._anchorBody;
+    }
+
+    addConstraint (v: RapierConstraint): void {
+        if (this.constraints.indexOf(v) < 0) this.constraints.push(v);
+    }
+
+    removeConstraint (v: RapierConstraint): void {
+        const i = this.constraints.indexOf(v);
+        if (i >= 0) this.constraints.splice(i, 1);
     }
 
     addSharedBody (sharedBody: RapierSharedBody): void {
@@ -388,6 +417,13 @@ export class RapierWorld implements IPhysicsWorld {
     destroy (): void {
         if (this._destroyed) return;
         this._destroyed = true;
+
+        // Joints must go before bodies: removing a rigid body first would leave the joint
+        // holding a freed parent handle.
+        const constraints = this.constraints.slice();
+        for (let i = 0; i < constraints.length; i++) constraints[i].destroyJoint();
+        this.constraints.length = 0;
+
         // Copy first: `destroy()` mutates `this.bodies` through `removeSharedBody`.
         const bodies = this.bodies.slice();
         for (let i = 0; i < bodies.length; i++) bodies[i].destroy();
@@ -396,6 +432,7 @@ export class RapierWorld implements IPhysicsWorld {
         this._pairEndDic.reset();
         this._pairPool.length = 0;
         this._contactsPool.length = 0;
+        this._anchorBody = null;
         this._eventQueue.free();
         this._world.free();
     }

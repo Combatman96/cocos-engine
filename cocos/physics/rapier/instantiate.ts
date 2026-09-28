@@ -34,12 +34,14 @@ import { RapierCylinderShape } from './shapes/rapier-cylinder-shape';
 import { RapierConeShape } from './shapes/rapier-cone-shape';
 import { RapierTrimeshShape } from './shapes/rapier-trimesh-shape';
 import { RapierPlaneShape } from './shapes/rapier-plane-shape';
+import { RapierP2PConstraint } from './constraints/rapier-p2p-constraint';
 import { waitForRapierInstantiation } from './instantiated';
 import { PhysicsSystem } from '../framework';
 
 /*
  * Wrapper slots deliberately left unregistered for now:
- *   TerrainShape, SimplexShape, the four constraints, and both character controllers.
+ *   TerrainShape, SimplexShape, three of the four constraints, and both character
+ *   controllers.
  *
  * `check()` in physics-selector.ts turns each missing slot into a
  * "rapier physics does not support X" warning plus a no-op stub, so a partial backend is
@@ -67,6 +69,8 @@ game.once(Game.EVENT_PRE_SUBSYSTEM_INIT, () => {
         ConeShape: RapierConeShape,
         TrimeshShape: RapierTrimeshShape,
         PlaneShape: RapierPlaneShape,
+
+        PointToPointConstraint: RapierP2PConstraint,
     });
 });
 
