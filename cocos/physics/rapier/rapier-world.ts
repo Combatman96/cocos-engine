@@ -78,6 +78,9 @@ export class RapierWorld implements IPhysicsWorld {
 
     private _defaultMaterial: PhysicsMaterial | null = null;
     private _debugDrawFlags: EPhysicsDrawFlags = EPhysicsDrawFlags.NONE;
+    private _debugDrawConstraintSize = 0.3;
+    private _allowSleep = true;
+    private _destroyed = false;
 
     constructor () {
         assertRapierReady('new RapierWorld()');
@@ -99,12 +102,11 @@ export class RapierWorld implements IPhysicsWorld {
     }
 
     get debugDrawConstraintSize (): number {
-        // Constraints are not implemented yet, so there is nothing to scale.
-        return 0;
+        return this._debugDrawConstraintSize;
     }
 
-    set debugDrawConstraintSize (_v: number) {
-        // no-op until constraints land
+    set debugDrawConstraintSize (v: number) {
+        this._debugDrawConstraintSize = v;
     }
 
     get defaultMaterial (): PhysicsMaterial | null {
@@ -115,12 +117,20 @@ export class RapierWorld implements IPhysicsWorld {
         this._world.gravity = { x: v.x, y: v.y, z: v.z };
     }
 
+    get allowSleep (): boolean {
+        return this._allowSleep;
+    }
+
     /**
      * Rapier has no world-level sleep toggle, and `setCanSleep` exists on
      * `RigidBodyDesc` only. Bodies are therefore force-woken each step instead; see
      * `RapierSharedBody.forceWakeIfNeeded`.
+     *
+     * The flag is stored as well as applied, because `constructDefaultWorld` calls this
+     * before a single body exists; `addSharedBody` then carries it to bodies created later.
      */
     setAllowSleep (v: boolean): void {
+        this._allowSleep = v;
         for (let i = 0; i < this.bodies.length; i++) {
             this.bodies[i].setAllowSleep(v);
         }
@@ -145,8 +155,14 @@ export class RapierWorld implements IPhysicsWorld {
      * Signature is `step(eventQueue?, hooks?)`.
      */
     step (deltaTime: number): void {
-        if (this.bodies.length === 0) return;
+        // `destroy()` frees the wasm world; anything reaching it afterwards would fault
+        // inside the bindings rather than raising a legible error.
+        if (this._destroyed) return;
+        // Set before the early return: the kinematic character controller reads
+        // `integrationParameters.dt`, and a scene holding only character controllers has
+        // no rigid bodies at all.
         this._world.timestep = deltaTime;
+        if (this.bodies.length === 0) return;
         this._world.step(this._eventQueue);
 
         // Physics -> scene writeback. `IPhysicsWorld` has no `syncPhysicsToScene`, so like
@@ -170,6 +186,7 @@ export class RapierWorld implements IPhysicsWorld {
     }
 
     syncSceneToPhysics (): void {
+        if (this._destroyed) return;
         for (let i = 0; i < this.bodies.length; i++) {
             this.bodies[i].syncSceneToPhysics();
         }
@@ -181,7 +198,7 @@ export class RapierWorld implements IPhysicsWorld {
      * `node.hasChangedFlags`) is not pushed back into the solver.
      */
     syncAfterEvents (): void {
-        if (!this._needSyncAfterEvents) return;
+        if (this._destroyed || !this._needSyncAfterEvents) return;
         for (let i = 0; i < this.bodies.length; i++) {
             this.bodies[i].syncSceneWithCheck();
         }
@@ -194,6 +211,7 @@ export class RapierWorld implements IPhysicsWorld {
     addSharedBody (sharedBody: RapierSharedBody): void {
         if (this.bodies.indexOf(sharedBody) < 0) {
             this.bodies.push(sharedBody);
+            sharedBody.setAllowSleep(this._allowSleep);
         }
     }
 
@@ -241,6 +259,7 @@ export class RapierWorld implements IPhysicsWorld {
     }
 
     emitEvents (): void {
+        if (this._destroyed) return;
         this._needSyncAfterEvents = false;
         if (!this._needEmitEvents) {
             this._pairBeginDic.reset();
@@ -329,6 +348,8 @@ export class RapierWorld implements IPhysicsWorld {
     }
 
     destroy (): void {
+        if (this._destroyed) return;
+        this._destroyed = true;
         // Copy first: `destroy()` mutates `this.bodies` through `removeSharedBody`.
         const bodies = this.bodies.slice();
         for (let i = 0; i < bodies.length; i++) bodies[i].destroy();

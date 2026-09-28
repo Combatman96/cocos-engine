@@ -84,7 +84,8 @@ export class RapierSharedBody {
     private _isKinematic = false;
     private _allowSleep = true;
     private _mass = 1;
-    private _index = -1;
+    private _inWorld = false;
+    private _destroyed = false;
     private _ref = 0;
 
     /** Set while the body has pending force/torque that must be cleared after the step. */
@@ -107,12 +108,13 @@ export class RapierSharedBody {
         return this._allowSleep;
     }
 
-    get index (): number {
-        return this._index;
-    }
-
-    set index (v: number) {
-        this._index = v;
+    /**
+     * Whether this body is currently in the world's body list. Deliberately a boolean:
+     * the previous numeric index went stale the moment `removeSharedBody` spliced the
+     * array, and it was only ever read as a `>= 0` sentinel anyway.
+     */
+    get inWorld (): boolean {
+        return this._inWorld;
     }
 
     get collisionFilterGroup (): number {
@@ -184,29 +186,31 @@ export class RapierSharedBody {
      * invalidating handles, so unlike cannon and bullet we never remove and reinsert.
      */
     set enabled (v: boolean) {
+        if (this._destroyed) return;
         if (v) {
-            if (this._index < 0) {
-                this._index = this.wrappedWorld.bodies.length;
+            if (!this._inWorld) {
+                this._inWorld = true;
                 this.wrappedWorld.addSharedBody(this);
                 this.syncInitial();
                 this.impl.setEnabled(true);
             }
-        } else if (this._index >= 0) {
+        } else if (this._inWorld) {
             const isRemove = (this.wrappedShapes.length === 0 && this._wrappedBody === null)
                 || (this.wrappedShapes.length === 0 && this._wrappedBody !== null && !this._wrappedBody.isEnabled);
             if (isRemove) {
                 this.clearVelocity();
                 if (this._body) this._body.setEnabled(false);
-                this._index = -1;
+                this._inWorld = false;
                 this.wrappedWorld.removeSharedBody(this);
             }
         }
     }
 
     set reference (v: boolean) {
+        if (this._destroyed) return;
         // eslint-disable-next-line @typescript-eslint/no-unused-expressions
         v ? this._ref++ : this._ref--;
-        if (this._ref === 0) this.destroy();
+        if (this._ref <= 0) this.destroy();
     }
 
     addShape (v: RapierShape): void {
@@ -378,6 +382,12 @@ export class RapierSharedBody {
     }
 
     destroy (): void {
+        // `RapierWorld.destroy()` destroys bodies directly, bypassing the ref count, so a
+        // later component teardown can reach here a second time. Without this guard the
+        // second pass dereferences the already-nulled node.
+        if (this._destroyed) return;
+        this._destroyed = true;
+
         // Handles are recycled arena indices, so every registry entry must be dropped
         // before anything else can claim the same handle.
         for (let i = 0; i < this.wrappedShapes.length; i++) {
@@ -390,8 +400,8 @@ export class RapierSharedBody {
             this._body = null;
         }
         RapierSharedBody.sharedBodesMap.delete(this.node.uuid);
-        if (this._index >= 0) {
-            this._index = -1;
+        if (this._inWorld) {
+            this._inWorld = false;
             this.wrappedWorld.removeSharedBody(this);
         }
         this._wrappedBody = null;

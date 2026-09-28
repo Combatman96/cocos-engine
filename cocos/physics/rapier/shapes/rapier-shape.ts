@@ -138,8 +138,11 @@ export abstract class RapierShape implements IBaseShape {
 
     onDestroy (): void {
         this._sharedBody.wrappedWorld.purgePairsForShape(this.id);
+        // Defensive: `onDisable` normally removed the collider already, but a component
+        // destroyed while disabled would otherwise leave a live collider whose recycled
+        // handle could later resolve to this dead shape.
+        this.destroyCollider();
         this._sharedBody.reference = false;
-        this._impl = null;
         (this._collider as unknown) = null;
     }
 
