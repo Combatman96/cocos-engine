@@ -130,3 +130,10 @@ export function toRapierBodyType (v: ERigidBodyType): number {
         return ERapierBodyType.FIXED;
     }
 }
+
+/**
+ * Upper bound on the repeated-cast loop used for all-hits shape sweeps. Rapier's
+ * `castShape` is closest-only, so each iteration has to exclude the colliders already
+ * found; without a cap a filter that never converges would spin forever.
+ */
+export const RAPIER_MAX_SWEEP_HITS = 64;

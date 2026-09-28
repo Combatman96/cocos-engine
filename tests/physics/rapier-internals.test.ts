@@ -5,6 +5,7 @@ import "../../exports/physics-cannon";
 import { waitForRapierInstantiation } from "../../cocos/physics/rapier/instantiated";
 import { RapierCache } from "../../cocos/physics/rapier/rapier-cache";
 import { Node, Scene } from "../../cocos/scene-graph";
+import { geometry, Quat, Vec3 } from "../../cocos/core";
 
 beforeAll(async () => {
     await waitForRapierInstantiation();
@@ -82,5 +83,18 @@ describe('rapier internals', () => {
         const world = PhysicsSystem.instance.physicsWorld;
         world.debugDrawConstraintSize = 0.75;
         expect(world.debugDrawConstraintSize).toBe(0.75);
+    });
+    test('sweep with a zero-length direction returns no hit and no NaN', () => {
+        const node = new Node('box');
+        scene.addChild(node);
+        node.addComponent(physics.BoxCollider);
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        // `geometry.Ray.d` is not guaranteed to be unit length; a zero vector would make
+        // Vec3.normalize yield NaN that Rapier propagates into time_of_impact.
+        const ray = new geometry.Ray(0, 0, 0, 0, 0, 0);
+        const hit = PhysicsSystem.instance.sweepBoxClosest(ray, new Vec3(0.5, 0.5, 0.5), new Quat());
+        expect(hit).toBe(false);
+        expect(Number.isNaN(PhysicsSystem.instance.sweepCastClosestResult.distance)).toBe(false);
     });
 });

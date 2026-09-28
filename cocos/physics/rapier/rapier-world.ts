@@ -23,7 +23,7 @@
 */
 
 import type * as RAPIER from '@dimforge/rapier3d-compat';
-import { IQuatLike, IVec3Like, RecyclePool, Vec3, geometry, warn } from '../../core';
+import { IQuatLike, IVec3Like, Quat, RecyclePool, Vec3, geometry } from '../../core';
 import { Node } from '../../scene-graph';
 import { PhysicsMaterial, PhysicsRayResult } from '../../../exports/physics-framework';
 import { EPhysicsDrawFlags } from '../framework/physics-enum';
@@ -35,6 +35,7 @@ import { RapierSharedBody } from './rapier-shared-body';
 import { RapierContactEquation } from './rapier-contact-equation';
 import { RapierCache, CC_V3_0, CC_V3_1 } from './rapier-cache';
 import { toQueryFilterFlags, toQueryGroups } from './rapier-utils';
+import { RAPIER_MAX_SWEEP_HITS } from './rapier-enum';
 import { R, assertRapierReady } from './instantiated';
 import type { RapierShape } from './shapes/rapier-shape';
 import type { RapierRigidBody } from './rapier-rigid-body';
@@ -45,8 +46,6 @@ interface IRapierPairItem {
     b: RapierShape;
     times: number;
 }
-
-let _warnedAboutSweep = false;
 
 /** @mangle */
 export class RapierWorld implements IPhysicsWorld {
@@ -75,6 +74,11 @@ export class RapierWorld implements IPhysicsWorld {
     private _needEmitEvents = false;
     private _needSyncAfterEvents = false;
     private _ray: RAPIER.Ray | null = null;
+    private readonly _sweepExcluded = new Set<number>();
+    private readonly _sweepPredicate = (collider: RAPIER.Collider): boolean => !this._sweepExcluded.has(collider.handle);
+    private _sweepBoxShape: RAPIER.Cuboid | null = null;
+    private _sweepBallShape: RAPIER.Ball | null = null;
+    private _sweepCapsuleShape: RAPIER.Capsule | null = null;
 
     private _defaultMaterial: PhysicsMaterial | null = null;
     private _debugDrawFlags: EPhysicsDrawFlags = EPhysicsDrawFlags.NONE;
@@ -318,33 +322,67 @@ export class RapierWorld implements IPhysicsWorld {
         return any;
     }
 
-    /*
-     * Shape sweeps are deferred to phase 2. Rapier's `castShape` covers the *Closest
-     * variants directly, but it is closest-only — there is no all-hits shape-cast
-     * iterator, so the non-closest variants need a repeated-cast-with-exclusion loop.
-     */
-    sweepBox (): boolean {
-        return this._sweepUnsupported();
+    sweepBox (
+        worldRay: geometry.Ray,
+        halfExtent: IVec3Like,
+        orientation: IQuatLike,
+        options: IRaycastOptions,
+        pool: RecyclePool<PhysicsRayResult>,
+        results: PhysicsRayResult[],
+    ): boolean {
+        return this._sweepAll(this._boxShape(halfExtent), orientation, worldRay, options, pool, results);
     }
 
-    sweepBoxClosest (): boolean {
-        return this._sweepUnsupported();
+    sweepBoxClosest (
+        worldRay: geometry.Ray,
+        halfExtent: IVec3Like,
+        orientation: IQuatLike,
+        options: IRaycastOptions,
+        result: PhysicsRayResult,
+    ): boolean {
+        return this._sweepClosest(this._boxShape(halfExtent), orientation, worldRay, options, result);
     }
 
-    sweepSphere (): boolean {
-        return this._sweepUnsupported();
+    sweepSphere (
+        worldRay: geometry.Ray,
+        radius: number,
+        options: IRaycastOptions,
+        pool: RecyclePool<PhysicsRayResult>,
+        results: PhysicsRayResult[],
+    ): boolean {
+        return this._sweepAll(this._ballShape(radius), Quat.IDENTITY, worldRay, options, pool, results);
     }
 
-    sweepSphereClosest (): boolean {
-        return this._sweepUnsupported();
+    sweepSphereClosest (
+        worldRay: geometry.Ray,
+        radius: number,
+        options: IRaycastOptions,
+        result: PhysicsRayResult,
+    ): boolean {
+        return this._sweepClosest(this._ballShape(radius), Quat.IDENTITY, worldRay, options, result);
     }
 
-    sweepCapsule (): boolean {
-        return this._sweepUnsupported();
+    sweepCapsule (
+        worldRay: geometry.Ray,
+        radius: number,
+        height: number,
+        orientation: IQuatLike,
+        options: IRaycastOptions,
+        pool: RecyclePool<PhysicsRayResult>,
+        results: PhysicsRayResult[],
+    ): boolean {
+        return this._sweepAll(this._capsuleShape(radius, height), orientation, worldRay, options, pool, results);
     }
 
-    sweepCapsuleClosest (): boolean {
-        return this._sweepUnsupported();
+    sweepCapsuleClosest (
+        worldRay: geometry.Ray,
+        radius: number,
+        height: number,
+        orientation: IQuatLike,
+        options: IRaycastOptions,
+        result: PhysicsRayResult,
+    ): boolean {
+        return this._sweepClosest(this._capsuleShape(radius, height), orientation, worldRay, options, result);
     }
 
     destroy (): void {
@@ -364,13 +402,120 @@ export class RapierWorld implements IPhysicsWorld {
 
     /* ---------------------------------------------------------------- internals */
 
-    private _sweepUnsupported (): boolean {
-        if (!_warnedAboutSweep) {
-            _warnedAboutSweep = true;
-            warn('[PHYSICS][rapier]: shape sweeps are not implemented by the rapier backend yet. '
-                + 'Use raycast, or switch to the bullet or physx backend.');
+    /* Cached sweep shapes. These are plain JS objects, so mutating them costs nothing. */
+    private _boxShape (halfExtent: IVec3Like): RAPIER.Shape {
+        if (!this._sweepBoxShape) this._sweepBoxShape = new R.Cuboid(halfExtent.x, halfExtent.y, halfExtent.z);
+        this._sweepBoxShape.halfExtents = halfExtent as RAPIER.Vector;
+        return this._sweepBoxShape;
+    }
+
+    private _ballShape (radius: number): RAPIER.Shape {
+        if (!this._sweepBallShape) this._sweepBallShape = new R.Ball(radius);
+        this._sweepBallShape.radius = radius;
+        return this._sweepBallShape;
+    }
+
+    private _capsuleShape (radius: number, height: number): RAPIER.Shape {
+        // Rapier's capsule half-height excludes the hemispherical caps, whereas the Cocos
+        // sweep API passes the total height.
+        const halfHeight = Math.max(0, height * 0.5 - radius);
+        if (!this._sweepCapsuleShape) this._sweepCapsuleShape = new R.Capsule(halfHeight, radius);
+        this._sweepCapsuleShape.halfHeight = halfHeight;
+        this._sweepCapsuleShape.radius = radius;
+        return this._sweepCapsuleShape;
+    }
+
+    /**
+     * Normalizes the sweep direction into CC_V3_1 and reports whether it is usable.
+     * `geometry.Ray.d` is not guaranteed to be unit length, and a zero vector would make
+     * `Vec3.normalize` yield NaN that Rapier propagates into `time_of_impact`.
+     */
+    private _prepareSweepDir (worldRay: geometry.Ray): boolean {
+        if (Vec3.lengthSqr(worldRay.d) < 1e-12) return false;
+        Vec3.normalize(CC_V3_1, worldRay.d);
+        return true;
+    }
+
+    private _castShapeOnce (
+        shape: RAPIER.Shape,
+        orientation: IQuatLike,
+        worldRay: geometry.Ray,
+        options: IRaycastOptions,
+        usePredicate: boolean,
+    ): RAPIER.ColliderShapeCastHit | null {
+        return this._world.castShape(
+            worldRay.o as RAPIER.Vector,
+            orientation as RAPIER.Rotation,
+            CC_V3_1 as RAPIER.Vector,
+            shape,
+            0,
+            options.maxDistance,
+            true,
+            toQueryFilterFlags(options) as RAPIER.QueryFilterFlags,
+            toQueryGroups(options),
+            undefined,
+            undefined,
+            usePredicate ? this._sweepPredicate : undefined,
+        );
+    }
+
+    private _sweepClosest (
+        shape: RAPIER.Shape,
+        orientation: IQuatLike,
+        worldRay: geometry.Ray,
+        options: IRaycastOptions,
+        result: PhysicsRayResult,
+    ): boolean {
+        if (this._destroyed || !this._prepareSweepDir(worldRay)) return false;
+        const hit = this._castShapeOnce(shape, orientation, worldRay, options, false);
+        if (!hit) return false;
+        const wrapped = RapierCache.getShape(hit.collider.handle);
+        if (!wrapped) return false;
+        this._assignSweepHit(result, hit, wrapped, options.maxDistance);
+        return true;
+    }
+
+    /**
+     * Rapier's `castShape` is closest-only, so all-hits is a repeated cast that excludes
+     * everything already found through `filterPredicate`.
+     */
+    private _sweepAll (
+        shape: RAPIER.Shape,
+        orientation: IQuatLike,
+        worldRay: geometry.Ray,
+        options: IRaycastOptions,
+        pool: RecyclePool<PhysicsRayResult>,
+        results: PhysicsRayResult[],
+    ): boolean {
+        if (this._destroyed || !this._prepareSweepDir(worldRay)) return false;
+        this._sweepExcluded.clear();
+        let any = false;
+        for (let i = 0; i < RAPIER_MAX_SWEEP_HITS; i++) {
+            const hit = this._castShapeOnce(shape, orientation, worldRay, options, true);
+            if (!hit) break;
+            this._sweepExcluded.add(hit.collider.handle);
+            const wrapped = RapierCache.getShape(hit.collider.handle);
+            if (!wrapped) continue;
+            any = true;
+            const r = pool.add();
+            this._assignSweepHit(r, hit, wrapped, options.maxDistance);
+            results.push(r);
         }
-        return false;
+        this._sweepExcluded.clear();
+        return any;
+    }
+
+    private _assignSweepHit (
+        out: PhysicsRayResult,
+        hit: RAPIER.ColliderShapeCastHit,
+        shape: RapierShape,
+        maxDistance: number,
+    ): void {
+        const toi = hit.time_of_impact;
+        // `witness1` is the contact point on the hit collider, which is what Cocos reports
+        // as the hit point; the swept shape's own origin ends up at `o + dir * toi`.
+        Vec3.copy(CC_V3_0, hit.witness1 as Vec3);
+        out._assign(CC_V3_0, toi, shape.collider, hit.normal1 as IVec3Like, maxDistance > 0 ? toi / maxDistance : 0);
     }
 
     private _makeRay (worldRay: geometry.Ray): RAPIER.Ray {

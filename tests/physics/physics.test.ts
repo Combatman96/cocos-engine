@@ -86,10 +86,7 @@ describe.each(Object.keys(physics.selector.backend))(
 
     RaycastTest(env);
 
-    // Shape sweeps are not implemented by the rapier backend yet.
-    if (id !== 'rapier') {
-        SweepTest(env);
-    }
+    SweepTest(env);
 
     if (id === 'builtin') {
         return;
