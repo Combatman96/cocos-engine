@@ -23,7 +23,9 @@
 */
 
 import type * as RAPIER from '@dimforge/rapier3d-compat';
-import { IQuatLike, IVec3Like, Quat, RecyclePool, Vec3, geometry } from '../../core';
+import { Color, IQuatLike, IVec3Like, Quat, RecyclePool, Vec3, geometry } from '../../core';
+import { director } from '../../game';
+import { GeometryRenderer } from '../../rendering/geometry-renderer';
 import { Node } from '../../scene-graph';
 import { PhysicsMaterial, PhysicsRayResult } from '../../../exports/physics-framework';
 import { EPhysicsDrawFlags } from '../framework/physics-enum';
@@ -91,6 +93,13 @@ export class RapierWorld implements IPhysicsWorld {
     private _allowSleep = true;
     private _destroyed = false;
     private _anchorBody: RAPIER.RigidBody | null = null;
+    private readonly _MAX_DEBUG_LINE_COUNT = 16384;
+    private _debugLineCount = 0;
+    private readonly _aabbColor = new Color(0, 255, 255, 255);
+    private readonly _wireColor = new Color(255, 255, 255, 255);
+    private readonly _debugV3_0 = new Vec3();
+    private readonly _debugV3_1 = new Vec3();
+    private readonly _debugAABB = new geometry.AABB();
 
     constructor () {
         assertRapierReady('new RapierWorld()');
@@ -198,6 +207,8 @@ export class RapierWorld implements IPhysicsWorld {
             sb.resetForcesIfDirty();
             sb.forceWakeIfNeeded();
         }
+
+        this._debugDraw();
     }
 
     syncSceneToPhysics (): void {
@@ -492,6 +503,64 @@ export class RapierWorld implements IPhysicsWorld {
         this._anchorBody = null;
         this._eventQueue.free();
         this._world.free();
+    }
+
+    /* ---------------------------------------------------------------- debug draw */
+
+    /** Same accessor every other backend uses; null when there is no camera yet. */
+    private _getDebugRenderer (): GeometryRenderer | null {
+        const cameras = director.root!.mainWindow?.cameras;
+        if (!cameras) return null;
+        if (cameras.length === 0) return null;
+        if (!cameras[0]) return null;
+        cameras[0].initGeometryRenderer();
+
+        return cameras[0].geometryRenderer;
+    }
+
+    private _debugDraw (): void {
+        if (this._debugDrawFlags === EPhysicsDrawFlags.NONE) return;
+        const renderer = this._getDebugRenderer();
+        if (!renderer) return;
+        this._debugLineCount = 0;
+
+        if (this._debugDrawFlags & EPhysicsDrawFlags.WIRE_FRAME) {
+            // Rapier renders the entire world in a single call, which makes this the
+            // cheapest debug draw of any backend: a flat line list of 3 floats per vertex,
+            // 2 vertices per line, plus one RGBA colour per vertex.
+            const buffers = this._world.debugRender();
+            const verts = buffers.vertices;
+            const colors = buffers.colors;
+            for (let i = 0; i + 5 < verts.length; i += 6) {
+                if (this._debugLineCount >= this._MAX_DEBUG_LINE_COUNT) break;
+                this._debugLineCount++;
+                this._debugV3_0.set(verts[i], verts[i + 1], verts[i + 2]);
+                this._debugV3_1.set(verts[i + 3], verts[i + 4], verts[i + 5]);
+                const c = (i / 6) * 8;
+                if (c + 3 < colors.length) {
+                    this._wireColor.set(
+                        colors[c] * 255,
+                        colors[c + 1] * 255,
+                        colors[c + 2] * 255,
+                        colors[c + 3] * 255,
+                    );
+                }
+                renderer.addLine(this._debugV3_0, this._debugV3_1, this._wireColor);
+            }
+        }
+
+        if (this._debugDrawFlags & EPhysicsDrawFlags.AABB) {
+            const AABB_LINE_COUNT = 12;
+            for (let i = 0; i < this.bodies.length; i++) {
+                const shapes = this.bodies[i].wrappedShapes;
+                for (let j = 0; j < shapes.length; j++) {
+                    if (this._debugLineCount + AABB_LINE_COUNT >= this._MAX_DEBUG_LINE_COUNT) break;
+                    this._debugLineCount += AABB_LINE_COUNT;
+                    shapes[j].getAABB(this._debugAABB);
+                    renderer.addBoundingBox(this._debugAABB, this._aabbColor);
+                }
+            }
+        }
     }
 
     /* ---------------------------------------------------------------- internals */

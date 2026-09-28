@@ -299,4 +299,26 @@ describe('rapier internals', () => {
 
         expect((sc as any)._shape.impl).not.toBeNull();
     });
+
+    test('debug draw reads line geometry and tolerates having no camera', () => {
+        const node = new Node('box');
+        scene.addChild(node);
+        node.addComponent(physics.BoxCollider);
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        const world = PhysicsSystem.instance.physicsWorld as any;
+        world.debugDrawFlags = physics.EPhysicsDrawFlags.WIRE_FRAME;
+
+        // Rapier renders the whole world in one call: a flat line list of 3 floats per
+        // vertex, 2 vertices per line, with one RGBA colour per vertex.
+        const buffers = world.impl.debugRender();
+        expect(buffers.vertices.length).toBeGreaterThan(0);
+        expect(buffers.colors.length).toBeGreaterThan(0);
+
+        // jsdom has no camera, so the renderer is unavailable and this must be a no-op
+        // rather than a crash.
+        expect(() => { world._debugDraw(); }).not.toThrow();
+
+        world.debugDrawFlags = physics.EPhysicsDrawFlags.NONE;
+    });
 });
