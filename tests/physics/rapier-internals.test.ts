@@ -186,4 +186,33 @@ describe('rapier internals', () => {
         // joint a free body drops ~5 units in one second at g = -10.
         expect(b.worldPosition.y).toBeGreaterThan(4.5);
     });
+
+    test('configurable constraint with all linear axes locked holds a body up', () => {
+        const a = new Node('a');
+        const b = new Node('b');
+        scene.addChild(a);
+        scene.addChild(b);
+        a.worldPosition = new Vec3(0, 5, 0);
+        b.worldPosition = new Vec3(1, 5, 0);
+        a.addComponent(physics.BoxCollider);
+        b.addComponent(physics.BoxCollider);
+        const rbA = a.addComponent(physics.RigidBody) as physics.RigidBody;
+        const rbB = b.addComponent(physics.RigidBody) as physics.RigidBody;
+        rbA.type = physics.RigidBody.Type.STATIC;
+        rbB.type = physics.RigidBody.Type.DYNAMIC;
+
+        const c = a.addComponent(physics.ConfigurableConstraint) as physics.ConfigurableConstraint;
+        const ll = c.linearLimitSettings;
+        ll.xMotion = physics.EConstraintMode.LOCKED;
+        ll.yMotion = physics.EConstraintMode.LOCKED;
+        ll.zMotion = physics.EConstraintMode.LOCKED;
+        c.connectedBody = rbB;
+
+        const dt = PhysicsSystem.instance.fixedTimeStep;
+        for (let i = 0; i < 60; i++) director.tick(dt);
+
+        // Every linear axis is locked against a static body, so b cannot fall. A free body
+        // drops ~5 units in one second at g = -10.
+        expect(b.worldPosition.y).toBeGreaterThan(4.5);
+    });
 });

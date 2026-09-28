@@ -137,3 +137,26 @@ export function toRapierBodyType (v: ERigidBodyType): number {
  * found; without a cap a filter that never converges would spin forever.
  */
 export const RAPIER_MAX_SWEEP_HITS = 64;
+
+/** Mirror of `RAPIER.JointAxesMask`. */
+export const ERapierJointAxesMask = {
+    LIN_X: 1,
+    LIN_Y: 2,
+    LIN_Z: 4,
+    ANG_X: 8,
+    ANG_Y: 16,
+    ANG_Z: 32,
+} as const;
+
+/**
+ * The axis-index convention shared by `setConstraintMode` and `setDriverMode`:
+ * 0/1/2 are linear X/Y/Z, 3 is twist, 4 is swing1, 5 is swing2.
+ */
+export const RAPIER_AXIS_TO_MASK = [
+    ERapierJointAxesMask.LIN_X,
+    ERapierJointAxesMask.LIN_Y,
+    ERapierJointAxesMask.LIN_Z,
+    ERapierJointAxesMask.ANG_X,
+    ERapierJointAxesMask.ANG_Y,
+    ERapierJointAxesMask.ANG_Z,
+] as const;

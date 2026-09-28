@@ -102,13 +102,13 @@ describe.each(Object.keys(physics.selector.backend))(
 
     DynamicTest(env);
 
-    // Constraints and character controllers are not implemented by the rapier backend yet,
-    // so their wrapper slots are unregistered and degrade to warn-and-noop stubs.
+    ConstraintTest(env);
+
+    // Character controllers are not implemented by the rapier backend yet, so both
+    // wrapper slots are unregistered and degrade to warn-and-noop stubs.
     if (id === 'rapier') {
         return;
     }
-
-    ConstraintTest(env);
 
     CharacterControllerTest(env);
 });
