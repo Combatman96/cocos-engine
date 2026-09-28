@@ -307,6 +307,21 @@
         }
     },
     "moduleOverrides": [{
+            "comment": [
+                "@dimforge/rapier3d-compat lists 'types' first in its package exports map, so a",
+                "resolver honouring that condition - Cocos Creator's engine compiler does - picks",
+                "dist/rapier.d.ts as the module and then fails on its 'export * from ./exports',",
+                "which has no .js twin. Redirect the bare specifier straight at the ESM build.",
+                "isVirtualModule must be true: a non-virtual key is resolved against the engine",
+                "root, which would never match a bare package specifier."
+            ],
+            "test": "true",
+            "isVirtualModule": true,
+            "overrides": {
+                "@dimforge/rapier3d-compat": "node_modules/@dimforge/rapier3d-compat/dist/rapier.mjs"
+            }
+        },
+        {
             "test": "true",
             "isVirtualModule": true,
             "overrides": {
