@@ -142,4 +142,24 @@ describe('rapier internals', () => {
 
         expect(world.impulseJoints.len()).toBe(baseline);
     });
+
+    test('hinge constraint converts degree limits to radians', () => {
+        const node = new Node('hinge');
+        scene.addChild(node);
+        node.addComponent(physics.BoxCollider);
+        const rb = node.addComponent(physics.RigidBody) as physics.RigidBody;
+        rb.type = physics.RigidBody.Type.DYNAMIC;
+        const h = node.addComponent(physics.HingeConstraint) as physics.HingeConstraint;
+        h.axis = new Vec3(0, 1, 0);
+        h.limitEnabled = true;
+        h.lowerLimit = -90;
+        h.upperLimit = 90;
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        // Cocos components carry degrees; Rapier joints take radians.
+        const impl = (h as any)._constraint.impl;
+        expect(impl).not.toBeNull();
+        expect(impl.limitsMin()).toBeCloseTo(-Math.PI / 2, 5);
+        expect(impl.limitsMax()).toBeCloseTo(Math.PI / 2, 5);
+    });
 });
