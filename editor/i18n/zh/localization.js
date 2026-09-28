@@ -946,6 +946,10 @@ module.exports = link(mixin({
             label: "基于 PhysX 的物理系统",
             description: "基于 PhysX 的物理系统支持。",
         },
+        physics_rapier: {
+            label: "基于 Rapier 的物理系统",
+            description: "基于 Rapier 的物理系统支持。仅支持 Web 平台，需要 WebAssembly。",
+        },
         primitives: {
             label: "基础几何体",
             description: "创建基础几何体的库。",
@@ -1133,6 +1137,12 @@ module.exports = link(mixin({
                 loadManual: {
                     label: '手动加载',
                     description: `是否通过 'loadWasmModulePhysX' API 手动加载 PhysX Wasm/AsmJS 模块 ?`,
+                },
+            },
+            rapier: {
+                loadManual: {
+                    label: '手动加载',
+                    description: `是否通过 'loadWasmModuleRapier' API 手动加载 Rapier Wasm 模块 ?`,
                 },
             },
         },

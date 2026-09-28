@@ -188,6 +188,30 @@
                         }
                     }
                 },
+                "physics-rapier": {
+                    "label": "i18n:ENGINE.features.physics_rapier.label",
+                    "description": "i18n:ENGINE.features.physics_rapier.description",
+                    "flags": {
+                        "LOAD_RAPIER_MANUALLY": {
+                            "label": "i18n:ENGINE.features.flags.rapier.loadManual.label",
+                            "description": "i18n:ENGINE.features.flags.rapier.loadManual.description",
+                            "default": false,
+                            "ui-type": "checkbox"
+                        }
+                    }
+                },
+                "physics-rapier": {
+                    "label": "i18n:ENGINE.features.physics_rapier.label",
+                    "description": "i18n:ENGINE.features.physics_rapier.description",
+                    "flags": {
+                        "LOAD_RAPIER_MANUALLY": {
+                            "label": "i18n:ENGINE.features.flags.rapier.loadManual.label",
+                            "description": "i18n:ENGINE.features.flags.rapier.loadManual.description",
+                            "default": false,
+                            "ui-type": "checkbox"
+                        }
+                    }
+                },
                 "physics-builtin": {
                     "label": "i18n:ENGINE.features.physics_builtin.label",
                     "description": "i18n:ENGINE.features.physics_builtin.description"

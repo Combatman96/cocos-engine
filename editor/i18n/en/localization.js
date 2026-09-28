@@ -968,6 +968,10 @@ module.exports = link(mixin({
             label: "PhysX Based Physics System",
             description: "Physics system that based on PhysX.",
         },
+        physics_rapier: {
+            label: "Rapier Based Physics System",
+            description: "Physics system that based on Rapier. Web only, requires WebAssembly.",
+        },
         primitives: {
             label: "Primitive Geometries",
             description: "Libraries that used to create primitive geometries.",
@@ -1155,6 +1159,12 @@ module.exports = link(mixin({
                 loadManual: {
                     label: 'Load Manually',
                     description: `Whether to load PhysX Wasm/AsmJS moudle manually by 'loadWasmModulePhysX' API ?`,
+                },
+            },
+            rapier: {
+                loadManual: {
+                    label: 'Load Manually',
+                    description: `Whether to load Rapier Wasm moudle manually by 'loadWasmModuleRapier' API ?`,
                 },
             },
         },

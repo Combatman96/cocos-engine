@@ -321,4 +321,27 @@ describe('rapier internals', () => {
 
         world.debugDrawFlags = physics.EPhysicsDrawFlags.NONE;
     });
+
+    test('editor exposes rapier as a web-only physics feature with i18n keys', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require('fs') as typeof import('fs');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const config = require('../../editor/engine-features/render-config.json');
+
+        const option = config.features.physics.options['physics-rapier'];
+        expect(option).toBeDefined();
+        expect(option.label).toBe('i18n:ENGINE.features.physics_rapier.label');
+        // Web-only: must not be advertised as a native module, and must not steal the
+        // default from physics-ammo.
+        expect(option.isNativeModule).toBeUndefined();
+        expect(option.cmakeConfig).toBeUndefined();
+        expect(option.default).toBeUndefined();
+        expect(option.flags.LOAD_RAPIER_MANUALLY).toBeDefined();
+
+        for (const locale of ['en', 'zh']) {
+            const src = fs.readFileSync(`editor/i18n/${locale}/localization.js`, 'utf8');
+            expect(src).toContain('physics_rapier');
+            expect(src).toContain('loadWasmModuleRapier');
+        }
+    });
 });
