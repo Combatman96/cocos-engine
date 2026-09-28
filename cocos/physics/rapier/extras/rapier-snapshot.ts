@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { warn } from '../../../core';
 import { getRapier, getRapierWorld } from './rapier-access';
 

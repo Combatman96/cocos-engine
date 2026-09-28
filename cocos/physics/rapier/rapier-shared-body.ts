@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { Quat, Vec3 } from '../../core';
 import { Node } from '../../scene-graph';
 import { TransformBit } from '../../scene-graph/node-enum';

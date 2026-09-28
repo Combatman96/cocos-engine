@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { Color, IQuatLike, IVec3Like, Quat, RecyclePool, Vec3, geometry } from '../../core';
 import { director } from '../../game';
 import { GeometryRenderer } from '../../rendering/geometry-renderer';

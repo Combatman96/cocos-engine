@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { IVec3Like, Vec3, warn } from '../../../core';
 import { ConfigurableConstraint } from '../../../../exports/physics-framework';
 import { EConstraintMode, EDriverMode } from '../../framework/physics-enum';

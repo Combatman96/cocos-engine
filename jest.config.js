@@ -7,18 +7,15 @@ if (!tsConfig.config) {
 }
 const { compilerOptions } = tsConfig.config;
 const tsPathsMapper = pathsToModuleNameMapper(compilerOptions.paths, { prefix: `${__dirname}/` });
-for (const key of Object.keys(tsPathsMapper)) {
-    if (key.includes('rapier3d')) delete tsPathsMapper[key];
-}
 
 module.exports = {
     testEnvironment: './tests/test-environment.ts',
     testRegex: '/tests/.*\\.(test|spec)?\\.(ts|tsx)$',
     moduleNameMapper: {
         ...tsPathsMapper,
-        // tsconfig paths point this at the ESM build for the engine bundlers, but jest runs
-        // CommonJS and does not transform node_modules, so it must take the CJS build.
-        '^@dimforge/rapier3d-compat$': '<rootDir>/node_modules/@dimforge/rapier3d-compat/dist/rapier.cjs',
+        // Jest runs CommonJS and does not transform node_modules.
+        '^external:rapier/rapier\.js$': '<rootDir>/node_modules/@cocos/rapier3d-compat/dist/rapier.cjs',
+        '^@cocos/rapier3d-compat$': '<rootDir>/node_modules/@cocos/rapier3d-compat/dist/rapier.cjs',
         'external:(.*)': '<rootDir>/native/external/$1',
     },
     transformIgnorePatterns: [

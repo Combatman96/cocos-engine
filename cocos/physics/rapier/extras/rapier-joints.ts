@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { IVec3Like, Vec3 } from '../../../core';
 import { RigidBody } from '../../../../exports/physics-framework';
 import { getRapier, getRapierRigidBody, getRapierWorld } from './rapier-access';

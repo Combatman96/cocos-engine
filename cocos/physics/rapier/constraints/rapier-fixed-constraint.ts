@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { Quat, Vec3, warn } from '../../../core';
 import { FixedConstraint } from '../../../../exports/physics-framework';
 import { IFixedConstraint } from '../../spec/i-physics-constraint';

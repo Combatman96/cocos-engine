@@ -19,20 +19,17 @@
         "cc.decorator": [
             "cocos/core/data/decorators/index.ts"
         ],
-        // @dimforge/rapier3d-compat lists "types" first in its package exports map, so a
-        // bundler honouring that condition (Cocos Creator's engine compiler) resolves the
-        // bare specifier to dist/rapier.d.ts and then cannot bundle it. Both ccbuild
-        // pipelines consume tsconfig paths ahead of node resolution and take the FIRST
-        // candidate, so the ESM build goes first. TypeScript cannot type a .mjs with no
-        // sibling declaration, so it falls through to the second candidate for types.
-        // jest.config.js overrides this same key to the CJS build.
-        "@dimforge/rapier3d-compat": [
-            "node_modules/@dimforge/rapier3d-compat/dist/rapier.mjs",
-            "node_modules/@dimforge/rapier3d-compat/dist/rapier.d.ts"
+        // Types-only alias for the Rapier declarations. It exists because the package's
+        // patched "exports" map declares only ".", which blocks subpath resolution under
+        // node16/bundler resolution. Only @types/rapier3d-compat.d.ts uses this, and only
+        // in a type position, so it never reaches the runtime module graph.
+        "@cocos/rapier3d-types": [
+            "node_modules/@cocos/rapier3d-compat/dist/rapier.d.ts"
         ]
     },
     "types": [
       "./@types/globals",
+      "./@types/rapier3d-compat",
       "./@types/consts",
       "./@types/jsb",
       "./@types/box2d-jsb",

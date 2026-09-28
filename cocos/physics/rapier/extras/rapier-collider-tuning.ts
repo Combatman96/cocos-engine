@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { Collider } from '../../../../exports/physics-framework';
 import { getRapierCollider } from './rapier-access';
 

@@ -25,7 +25,7 @@
 /* eslint-disable import/no-mutable-exports */
 
 import { BUILD, DEBUG, LOAD_RAPIER_MANUALLY } from 'internal:constants';
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { game } from '../../game';
 import { error, log, sys } from '../../core';
 
@@ -34,11 +34,16 @@ import { error, log, sys } from '../../core';
  * The live Rapier module namespace. It is an empty object until
  * `waitForRapierInstantiation()` has resolved.
  *
- * Backend code must import this binding rather than importing
- * '@dimforge/rapier3d-compat' directly, for two reasons:
- * 1. the package is pulled in through a dynamic `import()` below so that the wasm
- *    payload lands in its own rollup chunk instead of the main engine chunk;
- * 2. nothing in the package is usable before `init()` resolves.
+ * Backend code must import this binding rather than importing the package directly,
+ * because nothing in the package is usable before `init()` resolves.
+ *
+ * The package is imported STATICALLY, exactly as the cannon backend imports
+ * `@cocos/cannon`. Cocos Creator collects an engine's external npm dependencies from its
+ * static imports and emits each one into `editor/external/` (`%40cocos/cannon.js` and so
+ * on). A dynamic `import()` is not collected, so the specifier survives into the output
+ * with nothing to resolve it and the editor fails at runtime with either "Unable to
+ * resolve bare specifier" or "Only absolute URLs are supported", depending on whether a
+ * package name or a virtual module id was used.
  *
  * IMPORTANT: never dereference `R` at module evaluation time. Rapier's enums and
  * classes are only present after instantiation, and every module under
@@ -91,21 +96,32 @@ export function waitForRapierInstantiation (): Promise<void> {
                 + 'the rapier physics backend is unavailable.');
             return;
         }
-        const mod = await import('@dimforge/rapier3d-compat');
-        // Tolerate both the ESM namespace and the CommonJS interop shape.
-        const ns = (typeof (mod as { init?: unknown }).init === 'function'
-            ? mod
-            : (mod as unknown as { default: typeof RAPIER }).default) as typeof RAPIER;
+        // Loaded through the engine's external: origin, not the npm package name; see
+        // @types/rapier3d-compat.d.ts for why that distinction matters in Creator.
+        const mod = await import('external:rapier/rapier.js');
+        // Tolerate both the ESM namespace and a CommonJS interop shape.
+        const ns: typeof RAPIER = typeof (mod as { init?: unknown }).init === 'function'
+            ? (mod as unknown as typeof RAPIER)
+            : (mod as unknown as { default: typeof RAPIER }).default;
+        // The wasm is inlined in the package as base64, so init() needs no URL and never
+        // fetches; passing one is what previously produced "Only absolute URLs".
         await ns.init();
         R = ns;
         rapierReady = true;
         log(`[rapier]: rapier wasm lib loaded, version ${R.version()}.`);
     })().catch((err: unknown): void => {
         error(`[rapier]: rapier wasm lib load failed: ${err as string}`);
+        // Do not let subsystem initialization continue and construct a RapierWorld with an
+        // unavailable module; that would only replace the useful load error with
+        // "R.World is not a constructor".
+        throw err;
     });
     return instantiationPromise;
 }
 
+// Registered unconditionally, exactly as the bullet backend does. Gating this on
+// EDITOR_NOT_IN_PREVIEW stops the module loading during Preview in Editor, which fails
+// silently: no world is built, nothing falls, and nothing is logged.
 if (!BUILD || !LOAD_RAPIER_MANUALLY) {
     game.onPostInfrastructureInitDelegate.add(waitForRapierInstantiation);
 }

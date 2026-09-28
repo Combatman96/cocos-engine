@@ -22,7 +22,7 @@
  THE SOFTWARE.
 */
 
-import type * as RAPIER from '@dimforge/rapier3d-compat';
+import type * as RAPIER from '@cocos/rapier3d-compat';
 import { IVec3Like, Vec3, toRadian } from '../../../core';
 import { HingeConstraint } from '../../../../exports/physics-framework';
 import { IHingeConstraint } from '../../spec/i-physics-constraint';

@@ -8,7 +8,8 @@ JS bindings. It sits alongside the four backends the engine already ships: `bull
 - **Status:** complete. Every `IPhysicsWrapperObject` slot is registered and all ten
   `tests/physics` suites run against it.
 - **Selector id:** `rapier`
-- **Dependency:** `@dimforge/rapier3d-compat`, pinned exactly at `0.20.0`
+- **Dependency:** `@cocos/rapier3d-compat`, an npm alias of
+  `@dimforge/rapier3d-compat@0.20.0`
 - **Platforms:** web / H5 only
 - **Size:** 41 TypeScript files, ~6,000 lines
 
@@ -30,30 +31,60 @@ Scope decisions:
 Adding a backend is cheap because `cocos/physics/framework/physics-selector.ts` is the
 entire integration point — a backend is one `selector.register('rapier', {...})` call.
 
-### Why `@dimforge/rapier3d-compat`
+### Packaging, and the three resolution problems it had to solve
 
-An ordinary npm dependency, exactly as `@cocos/cannon` already is. The `-compat` build
-inlines the WASM as base64 and exposes an async `init()`.
+The package is an npm dependency, installed under the alias `@cocos/rapier3d-compat`.
+`scripts/patch-rapier-package.js` runs from `postinstall` and does two things, each
+fixing a failure that only appeared inside Cocos Creator.
+
+**1. Creator could not compile the engine.**
+
+```
+Could not resolve './exports' from node_modules/@cocos/rapier3d-compat/dist/rapier.d.ts
+```
+
+Creator resolves the engine's external dependencies to a file and hands that file to
+Rollup. Rapier ships a `types` field, so Creator selected `dist/rapier.d.ts` as the module
+to bundle, and Rollup died on its `import * as RAPIER from ./exports` — `exports.d.ts`
+has no `.js` twin. `@cocos/cannon` and `@cocos/box2d` declare no `types` at all, which is
+why they have always worked. The script deletes `types`/`typings` so the specifier resolves
+to real JavaScript; `@types/rapier3d-compat.d.ts` restores the typings through an ambient
+declaration, since module resolution and type lookup are independent in TypeScript.
+
+**2. The editor could not resolve the module at runtime.**
+
+```
+Unable to resolve bare specifier '@cocos/rapier3d-compat'   (SystemJS Error#8)
+```
+
+Creator emits external npm dependencies into `editor/external/` — `%40cocos/cannon.js` and
+so on — but never emitted one for Rapier, whether the import was static or dynamic. The
+script therefore copies `dist/rapier.mjs` to `native/external/rapier/rapier.js`, and the
+loader imports it as `external:rapier/rapier.js`. ccbuild's `externalWasmLoader` turns any
+`external:` id that matches no suffix rule into a real SystemJS module — the fallback at
+the end of its `_load` — which is exactly how the bullet backend loads its wasm, and the
+only route that works with a dynamic import inside Creator. `native/external/` is
+gitignored, so the copy is regenerated on every install.
+
+**3. Physics did not run in Preview in Editor.** Not a packaging problem, but the same
+class of mistake: the loader had been gated on `EDITOR_NOT_IN_PREVIEW`, which suppressed
+it inside the editor. That fails silently — no world, no bodies, no log, no error. The
+registration is now unconditional, matching bullet.
 
 Measured from `npm run build:dev`:
 
 | Chunk | raw | gzip |
 |---|---:|---:|
-| `rapier-*.js` (wasm module, own chunk) | 2.86 MB | 1.04 MB |
-| `physics-rapier.js` (backend code) | 170 KB | 25 KB |
+| `rapier-*.js` (wasm module, own chunk) | 2.91 MB | ~1.04 MB |
+| `physics-rapier.js` (backend code) | 170 KB | ~25 KB |
 
-The wasm lands in its **own lazily-imported chunk** — only `physics-rapier.js` references
-it, through `import('./rapier-*.js')` — so a project that ships the feature but never
-constructs a rapier world never downloads it.
+The wasm stays in its own lazily-imported chunk, so a project that ships the feature but
+never constructs a rapier world never downloads it, and `LOAD_RAPIER_MANUALLY` is
+meaningful.
 
-Alternatives were rejected:
-
-| Option | Why not |
-|---|---|
-| `@dimforge/rapier3d` (non-compat) | Saves ~300 KB gzip, but the `.wasm` must be emitted, hashed and URL-resolved at build time. The only engine machinery that does that is ccbuild's `externalWasmLoader`, whose culling table is keyed on **emscripten** suffixes (`.asm.js` / `.wasm.js` / `.js.mem`). Rapier is wasm-bindgen with no asm.js twin, so that loader would cull the binary to `export default ''` under an asmjs build. Would require forking `@cocos/ccbuild`. |
-| Vendoring into `native/external/` | That tree is pinned by `native/external-config.json` to `cocos/cocos-engine-external @ v3.8.8-2` and replaced wholesale by `npm run update:native-external`. |
-
----
+Rejected alternative: vendoring into `native/external/` by hand. That tree is pinned by
+`native/external-config.json` and replaced wholesale by `npm run update:native-external`,
+so the copy has to be generated at install time rather than committed.
 
 ## 2. Test results
 
@@ -160,14 +191,17 @@ that runs after rapier.
   bundler that honours the `types` condition — Cocos Creator's engine compiler does — resolves
   the bare specifier to `rapier.d.ts` and then fails on its `export * from "./exports"`,
   which has no `.js` twin. The error reads `Could not resolve './exports' from
-  .../dist/rapier.d.ts`. The CLI build never hit it because ccbuild's node-resolve omits the
-  `types` condition. Fixed in two places that both ccbuild pipelines consume ahead of node
-  resolution: a `cc.config.json` `moduleOverrides` entry (`isVirtualModule: true`, since a
-  non-virtual key is resolved against the engine root and would never match a bare specifier)
-  and a `tsconfig.json` `paths` entry whose first candidate is `dist/rapier.mjs` and whose
-  second is the `.d.ts` for TypeScript. `jest.config.js` strips that generated mapping and
-  substitutes `dist/rapier.cjs`, because jest runs CommonJS and does not transform
-  `node_modules`.
+  .../dist/rapier.d.ts`. Importing through the `@cocos/rapier3d-compat` npm alias sends the
+  package through Creator's node-module bundler, whose `require.resolve` selects the runtime
+  CommonJS entry and emits a browser-addressable external module. The postinstall script
+  `scripts/patch-rapier-package.js` also moves the runtime export conditions before `types`;
+  Creator enables both conditions and follows insertion order. `jest.config.js` maps the
+  alias to `dist/rapier.cjs`.
+
+- **Creator preview cannot dynamically import engine filesystem modules.** They resolve to
+  `q-bundled://` URLs, but preview is served from `http://localhost`, so Chromium blocks the
+  request under CORS. The `@cocos/*` npm alias makes Creator emit Rapier under `external/`
+  instead, preserving lazy loading without crossing protocols.
 
 ### 4.5 Import order in `tests/physics/physics.test.ts`
 
@@ -295,9 +329,8 @@ Solver settings write live `World` state, so they must be re-applied after
 
 ## 8. Possible follow-ups
 
-- **`-simd` / `-deterministic` builds.** Rapier publishes both at the same version and they
-  drop into the existing loader, which already resolves the module through a dynamic
-  `import()`. `-simd` needs a feature-detect and a second binary; `-deterministic` uses
+- **`-simd` / `-deterministic` builds.** Rapier publishes both at the same version.
+  `-simd` needs a feature-detect and a second binary; `-deterministic` uses
   soft-float for bit-identical cross-machine results and is what rollback netcode actually
   wants alongside snapshots.
 - **Exact 32-bit collision filtering by default**, once the per-pair hook cost is measured.
