@@ -155,6 +155,20 @@ that runs after rapier.
   glue constructs one at module scope — so merely *importing* Rapier under jest threw.
   Polyfilled from `node:util` in `tests/init.ts`.
 
+- **Package `exports` map lists `types` first.** Rapier's `package.json` declares
+  `{ "types": "./dist/rapier.d.ts", "require": "...cjs", "import": "...mjs" }`. A
+  bundler that honours the `types` condition — Cocos Creator's engine compiler does — resolves
+  the bare specifier to `rapier.d.ts` and then fails on its `export * from "./exports"`,
+  which has no `.js` twin. The error reads `Could not resolve './exports' from
+  .../dist/rapier.d.ts`. The CLI build never hit it because ccbuild's node-resolve omits the
+  `types` condition. Fixed in two places that both ccbuild pipelines consume ahead of node
+  resolution: a `cc.config.json` `moduleOverrides` entry (`isVirtualModule: true`, since a
+  non-virtual key is resolved against the engine root and would never match a bare specifier)
+  and a `tsconfig.json` `paths` entry whose first candidate is `dist/rapier.mjs` and whose
+  second is the `.d.ts` for TypeScript. `jest.config.js` strips that generated mapping and
+  substitutes `dist/rapier.cjs`, because jest runs CommonJS and does not transform
+  `node_modules`.
+
 ### 4.5 Import order in `tests/physics/physics.test.ts`
 
 `physics-cannon` must stay the **last** physics import. `selector.register` makes the
