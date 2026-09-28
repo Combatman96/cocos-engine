@@ -104,11 +104,5 @@ describe.each(Object.keys(physics.selector.backend))(
 
     ConstraintTest(env);
 
-    // Character controllers are not implemented by the rapier backend yet, so both
-    // wrapper slots are unregistered and degrade to warn-and-noop stubs.
-    if (id === 'rapier') {
-        return;
-    }
-
     CharacterControllerTest(env);
 });

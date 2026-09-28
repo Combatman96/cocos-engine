@@ -215,4 +215,22 @@ describe('rapier internals', () => {
         // drops ~5 units in one second at g = -10.
         expect(b.worldPosition.y).toBeGreaterThan(4.5);
     });
+
+    test('character controller ignores sub-threshold moves and a zero timestep', () => {
+        const node = new Node('cct');
+        scene.addChild(node);
+        const cct = node.addComponent(physics.CapsuleCharacterController) as physics.CapsuleCharacterController;
+        cct.minMoveDistance = 0.001;
+        cct.centerWorldPosition = new Vec3(0, 10, 0);
+
+        // Shorter than minMoveDistance, so it must not move at all.
+        cct.move(new Vec3(0, 0.0001, 0));
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+        expect(Vec3.equals(cct.centerWorldPosition as Vec3, new Vec3(0, 10, 0))).toBe(true);
+
+        // elapsedTime is unused by a purely geometric sweep, so zero must be harmless.
+        const impl = (cct as any)._cct;
+        expect(() => { impl.move(new Vec3(0, 1, 0), 0.001, 0); }).not.toThrow();
+        expect(Number.isNaN(cct.centerWorldPosition.y)).toBe(false);
+    });
 });

@@ -40,6 +40,7 @@ import { R, assertRapierReady } from './instantiated';
 import type { RapierShape } from './shapes/rapier-shape';
 import type { RapierRigidBody } from './rapier-rigid-body';
 import type { RapierConstraint } from './constraints/rapier-constraint';
+import type { RapierCharacterController } from './character-controllers/rapier-character-controller';
 
 /** A pair of touching shapes, plus how many steps it has been touching. */
 interface IRapierPairItem {
@@ -55,6 +56,7 @@ export class RapierWorld implements IPhysicsWorld {
 
     readonly bodies: RapierSharedBody[] = [];
     readonly constraints: RapierConstraint[] = [];
+    readonly ccts: RapierCharacterController[] = [];
 
     /**
      * Pairs currently touching. PERSISTENT across steps.
@@ -74,6 +76,7 @@ export class RapierWorld implements IPhysicsWorld {
     private readonly _contactsPool: RapierContactEquation[] = [];
 
     private _needEmitEvents = false;
+    private _needEmitCCTEvents = false;
     private _needSyncAfterEvents = false;
     private _ray: RAPIER.Ray | null = null;
     private readonly _sweepExcluded = new Set<number>();
@@ -98,6 +101,11 @@ export class RapierWorld implements IPhysicsWorld {
 
     get impl (): RAPIER.World {
         return this._world;
+    }
+
+    /** True once `destroy()` has freed the underlying wasm world. */
+    get destroyed (): boolean {
+        return this._destroyed;
     }
 
     get debugDrawFlags (): EPhysicsDrawFlags {
@@ -200,6 +208,9 @@ export class RapierWorld implements IPhysicsWorld {
         for (let i = 0; i < this.bodies.length; i++) {
             this.bodies[i].syncSceneToPhysics();
         }
+        for (let i = 0; i < this.ccts.length; i++) {
+            this.ccts[i].syncSceneToPhysics();
+        }
     }
 
     /**
@@ -230,6 +241,34 @@ export class RapierWorld implements IPhysicsWorld {
             );
         }
         return this._anchorBody;
+    }
+
+    addCCT (v: RapierCharacterController): void {
+        if (this.ccts.indexOf(v) < 0) this.ccts.push(v);
+    }
+
+    removeCCT (v: RapierCharacterController): void {
+        const i = this.ccts.indexOf(v);
+        if (i >= 0) this.ccts.splice(i, 1);
+    }
+
+    /**
+     * Same idempotent shape as `updateNeedEmitEvents`: turning it on is a direct set,
+     * turning it off rescans, because this is called once per listener add/remove.
+     */
+    updateNeedEmitCCTEvents (v: boolean): void {
+        if (v) {
+            this._needEmitCCTEvents = true;
+            return;
+        }
+        this._needEmitCCTEvents = false;
+        for (let i = 0; i < this.ccts.length; i++) {
+            const comp = this.ccts[i].characterController;
+            if (comp && comp.needCollisionEvent) {
+                this._needEmitCCTEvents = true;
+                return;
+            }
+        }
     }
 
     addConstraint (v: RapierConstraint): void {
@@ -417,6 +456,10 @@ export class RapierWorld implements IPhysicsWorld {
     destroy (): void {
         if (this._destroyed) return;
         this._destroyed = true;
+
+        const ccts = this.ccts.slice();
+        for (let i = 0; i < ccts.length; i++) ccts[i].onDestroy();
+        this.ccts.length = 0;
 
         // Joints must go before bodies: removing a rigid body first would leave the joint
         // holding a freed parent handle.
