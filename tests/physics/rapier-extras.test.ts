@@ -10,6 +10,7 @@ import {
     ERapierActiveEvents, ERapierQueryFilterFlags, ERapierActiveHooks, ERapierSolverFlags,
 } from "../../cocos/physics/rapier/extras";
 import { Node, Scene } from "../../cocos/scene-graph";
+import { Vec3 } from "../../cocos/core";
 
 beforeAll(async () => {
     await waitForRapierInstantiation();
@@ -102,5 +103,81 @@ describe('rapier extras', () => {
 
         setRapierSolverGroups(collider, 0x0003FFFF);
         expect(getRapierCollider(collider)!.solverGroups()).toBe(0x0003FFFF);
+    });
+
+    test('physics hooks can veto a contact pair', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const extras = require('../../cocos/physics/rapier/extras');
+
+        const floor = new Node('floor');
+        scene.addChild(floor);
+        floor.worldPosition = new Vec3(0, 0, 0);
+        const floorCollider = floor.addComponent(physics.BoxCollider) as physics.BoxCollider;
+        floorCollider.size = new Vec3(20, 1, 20);
+
+        const ball = new Node('ball');
+        scene.addChild(ball);
+        ball.worldPosition = new Vec3(0, 5, 0);
+        const ballCollider = ball.addComponent(physics.SphereCollider) as physics.SphereCollider;
+        const rb = ball.addComponent(physics.RigidBody) as physics.RigidBody;
+        rb.type = physics.RigidBody.Type.DYNAMIC;
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        // A hook only fires for colliders that opt in.
+        extras.setRapierActiveHooks(ballCollider, extras.ERapierActiveHooks.FILTER_CONTACT_PAIRS);
+
+        let called = false;
+        extras.setRapierPhysicsHooks({
+            filterContactPair: (): null => { called = true; return null; },
+        });
+
+        const dt = PhysicsSystem.instance.fixedTimeStep;
+        for (let i = 0; i < 120; i++) director.tick(dt);
+        extras.setRapierPhysicsHooks(null);
+
+        expect(called).toBe(true);
+        // Every contact was vetoed, so the ball falls straight through the floor.
+        expect(ball.worldPosition.y).toBeLessThan(0);
+    });
+
+    test('point projection finds the nearest collider', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { rapierProjectPoint } = require('../../cocos/physics/rapier/extras');
+
+        const node = new Node('box');
+        scene.addChild(node);
+        node.worldPosition = new Vec3(0, 0, 0);
+        node.addComponent(physics.BoxCollider);
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        const hit = rapierProjectPoint(new Vec3(5, 0, 0), true);
+        expect(hit).not.toBeNull();
+        expect(hit.collider.node.name).toBe('box');
+        // The default box is 1 unit across, so the closest surface point sits at x = 0.5.
+        expect(hit.point.x).toBeCloseTo(0.5, 3);
+    });
+
+    test('AABB query enumerates overlapping colliders', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { rapierCollidersInAabb } = require('../../cocos/physics/rapier/extras');
+
+        const a = new Node('inside');
+        const b = new Node('outside');
+        scene.addChild(a);
+        scene.addChild(b);
+        a.worldPosition = new Vec3(0, 0, 0);
+        b.worldPosition = new Vec3(50, 0, 0);
+        a.addComponent(physics.BoxCollider);
+        b.addComponent(physics.BoxCollider);
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        const found: string[] = [];
+        rapierCollidersInAabb(new Vec3(0, 0, 0), new Vec3(2, 2, 2), (c: any): boolean => {
+            found.push(c.node.name as string);
+            return true;
+        });
+
+        expect(found).toContain('inside');
+        expect(found).not.toContain('outside');
     });
 });

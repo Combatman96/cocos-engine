@@ -27,12 +27,13 @@ import { Color, IQuatLike, IVec3Like, Quat, RecyclePool, Vec3, geometry } from '
 import { director } from '../../game';
 import { GeometryRenderer } from '../../rendering/geometry-renderer';
 import { Node } from '../../scene-graph';
-import { PhysicsMaterial, PhysicsRayResult } from '../../../exports/physics-framework';
+import { Collider, PhysicsMaterial, PhysicsRayResult } from '../../../exports/physics-framework';
 import { EPhysicsDrawFlags } from '../framework/physics-enum';
 import { CollisionEventType, TriggerEventType } from '../framework/physics-interface';
 import { IPhysicsWorld, IRaycastOptions } from '../spec/i-physics-world';
 import { TupleDictionary } from '../utils/tuple-dictionary';
 import { CollisionEventObject, TriggerEventObject } from '../utils/util';
+import { rapierContactForceEvents } from './extras/rapier-events';
 import { RapierSharedBody } from './rapier-shared-body';
 import { RapierContactEquation } from './rapier-contact-equation';
 import { RapierCache, CC_V3_0, CC_V3_1 } from './rapier-cache';
@@ -93,6 +94,7 @@ export class RapierWorld implements IPhysicsWorld {
     private _allowSleep = true;
     private _destroyed = false;
     private _anchorBody: RAPIER.RigidBody | null = null;
+    private _hooks: RAPIER.PhysicsHooks | null = null;
     private readonly _MAX_DEBUG_LINE_COUNT = 16384;
     private _debugLineCount = 0;
     private readonly _aabbColor = new Color(0, 255, 255, 255);
@@ -187,7 +189,7 @@ export class RapierWorld implements IPhysicsWorld {
         // no rigid bodies at all.
         this._world.timestep = deltaTime;
         if (this.bodies.length === 0) return;
-        this._world.step(this._eventQueue);
+        this._world.step(this._eventQueue, this._hooks ?? undefined);
 
         // Physics -> scene writeback. `IPhysicsWorld` has no `syncPhysicsToScene`, so like
         // the cannon and physx backends this happens at the tail of `step`. Iterating only
@@ -252,6 +254,14 @@ export class RapierWorld implements IPhysicsWorld {
             );
         }
         return this._anchorBody;
+    }
+
+    /**
+     * Installs per-step physics hooks. Only colliders that also opt in through
+     * `setActiveHooks` reach the callbacks.
+     */
+    setPhysicsHooks (hooks: RAPIER.PhysicsHooks | null): void {
+        this._hooks = hooks;
     }
 
     addCCT (v: RapierCharacterController): void {
@@ -345,6 +355,7 @@ export class RapierWorld implements IPhysicsWorld {
         if (this._destroyed) return;
         this._needSyncAfterEvents = false;
         this._emitCCTEvents();
+        this._emitContactForceEvents();
         if (!this._needEmitEvents) {
             this._pairBeginDic.reset();
             this._pairEndDic.reset();
@@ -354,6 +365,35 @@ export class RapierWorld implements IPhysicsWorld {
         this._drainTransitions();
         this._emitExitPass();
         this._emitEnterStayPass();
+    }
+
+    private readonly _forceEvent = {
+        colliderA: null as Collider | null,
+        colliderB: null as Collider | null,
+        totalForce: new Vec3(),
+        totalForceMagnitude: 0,
+        maxForceDirection: new Vec3(),
+        maxForceMagnitude: 0,
+    };
+
+    /**
+     * Drains Rapier's contact-force queue. Everything is copied inside the callback: the
+     * event is a temporary wasm view that is freed once the callback returns.
+     */
+    private _emitContactForceEvents (): void {
+        if (!rapierContactForceEvents._hasListeners()) return;
+        this._eventQueue.drainContactForceEvents((event): void => {
+            const a = RapierCache.getShape(event.collider1());
+            const b = RapierCache.getShape(event.collider2());
+            const e = this._forceEvent;
+            e.colliderA = a ? a.collider : null;
+            e.colliderB = b ? b.collider : null;
+            event.totalForce(e.totalForce);
+            e.totalForceMagnitude = event.totalForceMagnitude();
+            event.maxForceDirection(e.maxForceDirection);
+            e.maxForceMagnitude = event.maxForceMagnitude();
+            rapierContactForceEvents._dispatch(e);
+        });
     }
 
     private _emitCCTEvents (): void {

@@ -50,6 +50,17 @@ export function setRapierSolverGroups (collider: Collider, groups: number): void
 }
 
 /**
+ * Which event kinds this collider produces, as a combination of `ERapierActiveEvents`.
+ *
+ * Note the backend drives this itself from the collider's Cocos listeners, so a value set
+ * here is overwritten the next time a listener is added or removed. Re-apply it after any
+ * such change if contact-force events must stay on.
+ */
+export function setRapierActiveEvents (collider: Collider, events: number): void {
+    getRapierCollider(collider)?.setActiveEvents(events as RAPIER.ActiveEvents);
+}
+
+/**
  * Opts this collider into the physics hooks. A hook installed without this flag silently
  * never fires, which is the single most common Rapier support question.
  */

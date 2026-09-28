@@ -28,3 +28,6 @@ export * from './rapier-enums';
 export * from './rapier-solver-config';
 export * from './rapier-body-tuning';
 export * from './rapier-collider-tuning';
+export * from './rapier-hooks';
+export * from './rapier-events';
+export * from './rapier-queries';
