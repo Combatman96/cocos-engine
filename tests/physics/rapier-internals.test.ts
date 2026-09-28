@@ -162,4 +162,28 @@ describe('rapier internals', () => {
         expect(impl.limitsMin()).toBeCloseTo(-Math.PI / 2, 5);
         expect(impl.limitsMax()).toBeCloseTo(Math.PI / 2, 5);
     });
+
+    test('fixed constraint holds a dynamic body against a static one', () => {
+        const a = new Node('a');
+        const b = new Node('b');
+        scene.addChild(a);
+        scene.addChild(b);
+        a.worldPosition = new Vec3(0, 5, 0);
+        b.worldPosition = new Vec3(1, 5, 0);
+        a.addComponent(physics.BoxCollider);
+        b.addComponent(physics.BoxCollider);
+        const rbA = a.addComponent(physics.RigidBody) as physics.RigidBody;
+        const rbB = b.addComponent(physics.RigidBody) as physics.RigidBody;
+        rbA.type = physics.RigidBody.Type.STATIC;
+        rbB.type = physics.RigidBody.Type.DYNAMIC;
+        const f = a.addComponent(physics.FixedConstraint) as physics.FixedConstraint;
+        f.connectedBody = rbB;
+
+        const dt = PhysicsSystem.instance.fixedTimeStep;
+        for (let i = 0; i < 60; i++) director.tick(dt);
+
+        // Welded to a static body, so b must not fall away under gravity. Without the
+        // joint a free body drops ~5 units in one second at g = -10.
+        expect(b.worldPosition.y).toBeGreaterThan(4.5);
+    });
 });
