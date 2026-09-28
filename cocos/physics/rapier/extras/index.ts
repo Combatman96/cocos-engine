@@ -22,9 +22,9 @@
  THE SOFTWARE.
 */
 
-import '../cocos/physics/rapier/instantiate';
-
-export { loadWasmModuleRapier } from '../cocos/physics/rapier/instantiate';
-
-// Rapier-only extension surface. Tree-shakeable: the barrel has no side effects.
-export * from '../cocos/physics/rapier/extras';
+// Pure re-export barrel: no top-level statements, so unreferenced exports tree-shake away.
+export * from './rapier-access';
+export * from './rapier-enums';
+export * from './rapier-solver-config';
+export * from './rapier-body-tuning';
+export * from './rapier-collider-tuning';
