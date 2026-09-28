@@ -160,3 +160,8 @@ export const RAPIER_AXIS_TO_MASK = [
     ERapierJointAxesMask.ANG_Y,
     ERapierJointAxesMask.ANG_Z,
 ] as const;
+
+/** Mirror of `RAPIER.HeightFieldFlags`. */
+export const ERapierHeightFieldFlags = {
+    FIX_INTERNAL_EDGES: 1,
+} as const;

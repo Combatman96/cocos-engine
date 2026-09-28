@@ -262,4 +262,41 @@ describe('rapier internals', () => {
         expect(hits).toBeGreaterThan(0);
         expect(hitCollider).toBe(box);
     });
+
+    test('non-square terrain lays heights out column-major', () => {
+        const sizeI = 3;
+        const sizeJ = 5;
+        // Height depends only on j, so a transposed buffer is immediately visible.
+        const asset = {
+            _uuid: 'test-terrain',
+            tileSize: 1,
+            getVertexCountI: (): number => sizeI,
+            getVertexCountJ: (): number => sizeJ,
+            getHeight: (_i: number, j: number): number => j,
+        };
+
+        const node = new Node('terrain');
+        scene.addChild(node);
+        const tc = node.addComponent(physics.TerrainCollider) as physics.TerrainCollider;
+        tc.terrain = asset as any;
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        const shape = (tc as any)._shape;
+        expect(shape.impl).not.toBeNull();
+        // Rapier's heightfield buffer is column-major: index = j * sizeI + i.
+        expect(shape.heights.length).toBe(sizeI * sizeJ);
+        expect(shape.heights[2 * sizeI + 0]).toBeCloseTo(2, 5);
+        expect(shape.heights[4 * sizeI + 1]).toBeCloseTo(4, 5);
+        expect(shape.heights[0 * sizeI + 2]).toBeCloseTo(0, 5);
+    });
+
+    test('simplex collider builds a convex hull from its vertex count', () => {
+        const node = new Node('simplex');
+        scene.addChild(node);
+        const sc = node.addComponent(physics.SimplexCollider) as physics.SimplexCollider;
+        sc.shapeType = 4; // TETRAHEDRON
+        director.tick(PhysicsSystem.instance.fixedTimeStep);
+
+        expect((sc as any)._shape.impl).not.toBeNull();
+    });
 });

@@ -34,6 +34,8 @@ import { RapierCylinderShape } from './shapes/rapier-cylinder-shape';
 import { RapierConeShape } from './shapes/rapier-cone-shape';
 import { RapierTrimeshShape } from './shapes/rapier-trimesh-shape';
 import { RapierPlaneShape } from './shapes/rapier-plane-shape';
+import { RapierTerrainShape } from './shapes/rapier-terrain-shape';
+import { RapierSimplexShape } from './shapes/rapier-simplex-shape';
 import { RapierP2PConstraint } from './constraints/rapier-p2p-constraint';
 import { RapierHingeConstraint } from './constraints/rapier-hinge-constraint';
 import { RapierFixedConstraint } from './constraints/rapier-fixed-constraint';
@@ -73,6 +75,8 @@ game.once(Game.EVENT_PRE_SUBSYSTEM_INIT, () => {
         ConeShape: RapierConeShape,
         TrimeshShape: RapierTrimeshShape,
         PlaneShape: RapierPlaneShape,
+        TerrainShape: RapierTerrainShape,
+        SimplexShape: RapierSimplexShape,
 
         PointToPointConstraint: RapierP2PConstraint,
         HingeConstraint: RapierHingeConstraint,
