@@ -344,4 +344,32 @@ describe('rapier internals', () => {
             expect(src).toContain('loadWasmModuleRapier');
         }
     });
+
+    test('an empty physicsEngine setting selects the sole custom backend and pins it', () => {
+        // Cocos Creator's editor build bundles every backend and writes physicsEngine: ""
+        // for a physics feature it does not recognise, then follows up with
+        // switchTo('builtin'). Both halves must be handled or editor preview silently
+        // runs the dynamics-free builtin backend.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { settings, SettingsCategory } = require('../../cocos/core');
+        const previous = settings.querySettings(SettingsCategory.PHYSICS, 'physicsEngine');
+        settings.overrideSettings(SettingsCategory.PHYSICS, 'physicsEngine', '');
+        physics.selector.switchTo('cannon.js');
+        expect(physics.selector.id).toBe('cannon.js');
+        try {
+            (PhysicsSystem as any).selectConfiguredBackend();
+            expect(physics.selector.id).toBe('rapier');
+            expect(physics.selector.pinnedId).toBe('rapier');
+
+            physics.selector.switchTo('rapier');
+            const world = physics.selector.physicsWorld;
+            physics.selector.switchTo('builtin');
+            expect(physics.selector.id).toBe('rapier');
+            // Coerced call must not rebuild the live world either.
+            expect(physics.selector.physicsWorld).toBe(world);
+        } finally {
+            physics.selector.pinnedId = null;
+            settings.overrideSettings(SettingsCategory.PHYSICS, 'physicsEngine', previous);
+        }
+    });
 });

@@ -114,6 +114,18 @@ export interface IPhysicsSelector {
      */
     switchTo: (id: IPhysicsEngineId) => void,
 
+    /**
+     * @en
+     * When set, `switchTo` coerces every request to this id. The physics system pins the
+     * backend it derived from project settings when the host cannot name it itself, so a
+     * later host-side fallback (Cocos Creator's editor calls `switchTo('builtin')` for any
+     * physics feature it does not recognise) cannot undo that choice. Set to null to allow
+     * switching again.
+     * @zh
+     * 设置后，`switchTo` 会强制切换到该 id。用于防止宿主的回退逻辑覆盖项目设置选定的后端。
+     */
+    pinnedId: IPhysicsEngineId | null,
+
     // polyfill
     [x: string]: any,
 }
@@ -144,6 +156,14 @@ let worldInitData: IWorldInitData | null;
 
 function switchTo (id: IPhysicsEngineId): void {
     if (!selector.runInEditor) return;
+    if (selector.pinnedId && id !== selector.pinnedId) {
+        if (!TEST) log(`[PHYSICS]: ignoring switch to '${id}'; backend is pinned to '${selector.pinnedId}' by project settings.`);
+        // The pinned backend is already live: leave its world alone. Falling through would
+        // reach the branch below that unconditionally builds a fresh world, orphaning every
+        // body already created in the current one.
+        if (selector.physicsWorld && selector.id === selector.pinnedId) return;
+        id = selector.pinnedId;
+    }
     const mutableSelector = selector as Mutable<IPhysicsSelector>;
     if (selector.physicsWorld && id !== selector.id && selector.backend[id] != null) {
         selector.physicsWorld.destroy();
@@ -176,6 +196,7 @@ export const selector: IPhysicsSelector = {
     wrapper: {} as any,
     backend: {} as any,
     physicsWorld: null as any,
+    pinnedId: null,
 
     /// hide for now ///
     runInEditor: !EDITOR,

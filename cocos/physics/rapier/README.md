@@ -71,6 +71,17 @@ class of mistake: the loader had been gated on `EDITOR_NOT_IN_PREVIEW`, which su
 it inside the editor. That fails silently — no world, no bodies, no log, no error. The
 registration is now unconditional, matching bullet.
 
+**4. Preview in Editor ran `builtin` instead of Rapier.** Creator's editor build bundles
+every backend, so selection cannot rely on "whichever module registered last" the way a
+cropped runtime build can. Creator writes the selected feature into the `physicsEngine`
+setting only for the four backends it knows; for anything else it writes `""` and then
+calls `switchTo('builtin')` from its own compiled scene scripts. `PhysicsSystem` now
+honours the setting when it is named (mapping feature names such as `physics-ammo` to
+their selector ids), treats `""` as "the one registered backend Creator does not know",
+and **pins** that choice so the later `switchTo('builtin')` is coerced to a no-op. The pin
+only ever engages for a custom backend — Creator names its own four explicitly — and can
+be cleared with `physics.selector.pinnedId = null`.
+
 Measured from `npm run build:dev`:
 
 | Chunk | raw | gzip |

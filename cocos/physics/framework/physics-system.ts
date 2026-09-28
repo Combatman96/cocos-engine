@@ -22,8 +22,8 @@
  THE SOFTWARE.
 */
 
-import { BUILD, EDITOR_NOT_IN_PREVIEW, LOAD_BULLET_MANUALLY, LOAD_PHYSX_MANUALLY, LOAD_RAPIER_MANUALLY } from 'internal:constants';
-import { Vec3, RecyclePool, Enum, System, cclegacy, settings, geometry, warn, IQuatLike, IVec3Like, SettingsCategory, errorID, warnID } from '../../core';
+import { BUILD, DEBUG, EDITOR_NOT_IN_PREVIEW, LOAD_BULLET_MANUALLY, LOAD_PHYSX_MANUALLY, LOAD_RAPIER_MANUALLY } from 'internal:constants';
+import { Vec3, RecyclePool, Enum, System, cclegacy, settings, geometry, warn, log, IQuatLike, IVec3Like, SettingsCategory, errorID, warnID } from '../../core';
 import { IPhysicsWorld, IRaycastOptions } from '../spec/i-physics-world';
 import { director, DirectorEvent, game } from '../../game';
 import { PhysicsMaterial } from './assets/physics-material';
@@ -894,6 +894,106 @@ export class PhysicsSystem extends System implements IWorldInitData {
         return Promise.resolve();
     }
 
+    /**
+     * Maps a ccbuild physics feature name onto the backend id it registers under. Cocos
+     * Creator writes the feature name into the project settings, and its own editor-side
+     * fixup knows only the four backends it ships - a custom backend has to translate its
+     * own name here or it is never selected.
+     */
+    private static readonly FEATURE_TO_BACKEND_ID: Readonly<Record<string, string>> = {
+        'physics-ammo': 'bullet',
+        'physics-bullet': 'bullet',
+        'physics-cannon': 'cannon.js',
+        'physics-physx': 'physx',
+        'physics-builtin': 'builtin',
+        'physics-rapier': 'rapier',
+    };
+
+    /**
+     * Honours the `physicsEngine` project setting.
+     *
+     * Backend selection otherwise depends purely on module evaluation order, because
+     * `selector.register` promotes whichever backend registers last before the world is
+     * built. That is fine for a cropped runtime build, which bundles exactly one backend,
+     * but not for builds that contain several - Cocos Creator's editor build is one, and
+     * there `builtin` can win and silently disable all dynamics.
+     *
+     * Re-registering the configured backend promotes it, since `register` takes effect
+     * whenever no world exists yet. Does nothing when the setting is absent or names a
+     * backend that was not bundled.
+     */
+    /**
+     * The backends Cocos Creator itself knows about. Creator writes the selected physics
+     * feature's name into the `physicsEngine` setting only for these; for any other
+     * selection it writes an empty string.
+     */
+    private static readonly CREATOR_KNOWN_BACKENDS: ReadonlySet<string> = new Set([
+        'builtin', 'cannon.js', 'bullet', 'physx',
+    ]);
+
+    /**
+     * Makes `id` the active backend. Before the world exists `register` promotes it; once a
+     * world exists only `switchTo` can replace it.
+     */
+    private static activateBackend (id: string): void {
+        if (id === selector.id) return;
+        if (selector.physicsWorld) {
+            selector.switchTo(id);
+        } else {
+            selector.register(id, selector.backend[id]);
+        }
+    }
+
+    private static selectConfiguredBackend (): void {
+        const configured = querySettings<string>(SettingsCategory.PHYSICS, 'physicsEngine');
+
+        if (configured) {
+            // The setting carries the ccbuild FEATURE name, not the selector id, so
+            // 'physics-ammo' has to become 'bullet' and so on. An id is accepted as-is too.
+            const id = PhysicsSystem.FEATURE_TO_BACKEND_ID[configured] ?? configured;
+            if (id === selector.id) return;
+            const wrapper = selector.backend[id];
+            if (!wrapper) {
+                warn(`[PHYSICS]: the configured physics engine '${configured}' is not included in `
+                    + `this build; using '${selector.id}' instead.`);
+                return;
+            }
+            PhysicsSystem.activateBackend(id);
+            return;
+        }
+
+        if (configured === '') {
+            // Creator's editor build bundles every backend and writes an EMPTY name when the
+            // selected physics feature is one it does not recognise - which is exactly the
+            // custom-backend case. The intended backend is then the one registered backend
+            // Creator does not know. Anything Creator does know is named explicitly above,
+            // so this branch can never steal a bullet/physx/cannon/builtin project.
+            const custom = Object.keys(selector.backend)
+                .filter((id) => !PhysicsSystem.CREATOR_KNOWN_BACKENDS.has(id));
+            if (custom.length === 1) {
+                PhysicsSystem.activateBackend(custom[0]);
+                // Creator follows up with switchTo('builtin') for the same unrecognised
+                // feature; pinning makes this decision stick. See IPhysicsSelector.pinnedId.
+                selector.pinnedId = custom[0];
+                return;
+            }
+            if (custom.length > 1) {
+                warn(`[PHYSICS]: physicsEngine is unset and several custom backends are registered `
+                    + `[${custom.join(', ')}]; using '${selector.id}'. Call selector.switchTo() explicitly.`);
+            }
+            return;
+        }
+
+        if (DEBUG) {
+            // No setting at all (e.g. a cropped build that bundles exactly one backend).
+            // Diagnostic only: shows what the host handed us and what registered.
+            const raw = (settings as unknown as { _settings: Record<string, unknown> })._settings;
+            log(`[PHYSICS]: no physicsEngine setting; registered backends: `
+                + `[${Object.keys(selector.backend).join(', ')}]; active: '${selector.id}'; `
+                + `physics settings: ${JSON.stringify(raw[SettingsCategory.PHYSICS] ?? null)}`);
+        }
+    }
+
     private static doConstructAndRegister (): PhysicsSystem | null {
         const enabled = querySettings(SettingsCategory.PHYSICS, 'enabled') ?? true;
         if (!enabled) { return null; }
@@ -902,6 +1002,7 @@ export class PhysicsSystem extends System implements IWorldInitData {
             const sys = new PhysicsSystem();
             (PhysicsSystem._instance as unknown as PhysicsSystem) = sys;
             sys.resetConfiguration();
+            PhysicsSystem.selectConfiguredBackend();
             constructDefaultWorld(sys);
             director.registerSystem(PhysicsSystem.ID, sys, sys.priority);
         }
