@@ -233,4 +233,33 @@ describe('rapier internals', () => {
         expect(() => { impl.move(new Vec3(0, 1, 0), 0.001, 0); }).not.toThrow();
         expect(Number.isNaN(cct.centerWorldPosition.y)).toBe(false);
     });
+
+    test('character controller emits onControllerColliderHit when it hits a collider', () => {
+        const floor = new Node('floor');
+        scene.addChild(floor);
+        floor.worldPosition = new Vec3(0, 0, 0);
+        const box = floor.addComponent(physics.BoxCollider) as physics.BoxCollider;
+        box.size = new Vec3(10, 1, 10);
+
+        const node = new Node('cct');
+        scene.addChild(node);
+        const cct = node.addComponent(physics.CapsuleCharacterController) as physics.CapsuleCharacterController;
+        cct.centerWorldPosition = new Vec3(0, 3, 0);
+
+        let hits = 0;
+        let hitCollider: unknown = null;
+        cct.on('onControllerColliderHit', (contact: any) => {
+            hits++;
+            hitCollider = contact.collider;
+        });
+
+        const dt = PhysicsSystem.instance.fixedTimeStep;
+        for (let i = 0; i < 30; i++) {
+            cct.move(new Vec3(0, -0.5, 0));
+            director.tick(dt);
+        }
+
+        expect(hits).toBeGreaterThan(0);
+        expect(hitCollider).toBe(box);
+    });
 });

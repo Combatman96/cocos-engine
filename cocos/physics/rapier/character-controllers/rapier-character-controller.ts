@@ -28,6 +28,8 @@ import { TransformBit } from '../../../scene-graph/node-enum';
 import { CharacterController, PhysicsSystem } from '../../../../exports/physics-framework';
 import { IBaseCharacterController } from '../../spec/i-character-controller';
 import { PhysicsGroup } from '../../framework/physics-enum';
+import { CharacterControllerContact } from '../../framework/physics-interface';
+import { RapierCache } from '../rapier-cache';
 import { RapierWorld } from '../rapier-world';
 import { ERapierBodyType } from '../rapier-enum';
 import { packInteractionGroups } from '../rapier-utils';
@@ -59,6 +61,11 @@ export abstract class RapierCharacterController implements IBaseCharacterControl
     private _destroyed = false;
     private _collisionFilterGroup: number = PhysicsGroup.DEFAULT;
     private _collisionFilterMask = -1;
+
+    /** Contacts produced by the most recent sweep, drained by the world after the step. */
+    readonly pendingContacts: CharacterControllerContact[] = [];
+    private readonly _contactPool: CharacterControllerContact[] = [];
+    private _collisionScratch: RAPIER.CharacterCollision | null = null;
 
     private static _idCounter = 0;
     readonly id = RapierCharacterController._idCounter++;
@@ -176,6 +183,44 @@ export abstract class RapierCharacterController implements IBaseCharacterControl
         this._grounded = this._controller.computedGrounded();
         Vec3.add(this._position, this._position, v3_1);
         this._pushPositionToNative();
+        if (this._comp.needCollisionEvent) this._collectCollisions(v3_0);
+    }
+
+    /**
+     * Copies this sweep's collisions out of Rapier.
+     *
+     * `computedCollision` hands back a reused view whose backing memory the next call
+     * overwrites, so every field has to be copied before moving on.
+     */
+    private _collectCollisions (motion: Vec3): void {
+        if (!this._controller) return;
+        const count = this._controller.numComputedCollisions();
+        const motionLength = Vec3.len(motion);
+        Vec3.normalize(v3_2, motion);
+        for (let i = 0; i < count; i++) {
+            this._collisionScratch = this._controller.computedCollision(i, this._collisionScratch ?? undefined);
+            const hit = this._collisionScratch;
+            if (!hit || !hit.collider) continue;
+            const shape = RapierCache.getShape(hit.collider.handle);
+            if (!shape || !shape.collider) continue;
+
+            const contact = this._contactPool.pop() ?? new CharacterControllerContact();
+            contact.controller = this._comp;
+            contact.collider = shape.collider;
+            contact.worldPosition.set(hit.witness1.x, hit.witness1.y, hit.witness1.z);
+            contact.worldNormal.set(hit.normal1.x, hit.normal1.y, hit.normal1.z);
+            contact.motionDirection.set(v3_2.x, v3_2.y, v3_2.z);
+            contact.motionLength = motionLength;
+            this.pendingContacts.push(contact);
+        }
+    }
+
+    /** Returns this frame's contacts to the pool once the world has emitted them. */
+    recycleContacts (): void {
+        for (let i = 0; i < this.pendingContacts.length; i++) {
+            this._contactPool.push(this.pendingContacts[i]);
+        }
+        this.pendingContacts.length = 0;
     }
 
     syncPhysicsToScene (): void {

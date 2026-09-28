@@ -333,6 +333,7 @@ export class RapierWorld implements IPhysicsWorld {
     emitEvents (): void {
         if (this._destroyed) return;
         this._needSyncAfterEvents = false;
+        this._emitCCTEvents();
         if (!this._needEmitEvents) {
             this._pairBeginDic.reset();
             this._pairEndDic.reset();
@@ -342,6 +343,19 @@ export class RapierWorld implements IPhysicsWorld {
         this._drainTransitions();
         this._emitExitPass();
         this._emitEnterStayPass();
+    }
+
+    private _emitCCTEvents (): void {
+        if (!this._needEmitCCTEvents) return;
+        for (let i = 0; i < this.ccts.length; i++) {
+            const cct = this.ccts[i];
+            const contacts = cct.pendingContacts;
+            for (let j = 0; j < contacts.length; j++) {
+                cct.characterController.emit('onControllerColliderHit', contacts[j]);
+                this._needSyncAfterEvents = true;
+            }
+            cct.recycleContacts();
+        }
     }
 
     /* ---------------------------------------------------------------- queries */
