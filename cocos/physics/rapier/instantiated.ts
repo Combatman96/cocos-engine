@@ -26,6 +26,7 @@
 
 import { BUILD, DEBUG, LOAD_RAPIER_MANUALLY } from 'internal:constants';
 import type * as RAPIER from '@cocos/rapier3d-compat';
+import { fetchBuffer } from 'pal/wasm';
 import { game } from '../../game';
 import { error, log, sys } from '../../core';
 
@@ -98,14 +99,20 @@ export function waitForRapierInstantiation (): Promise<void> {
         }
         // Loaded through the engine's external: origin, not the npm package name; see
         // @types/rapier3d-compat.d.ts for why that distinction matters in Creator.
-        const mod = await import('external:rapier/rapier.js');
+        const [mod, { default: wasmUrl }] = await Promise.all([
+            import('external:rapier/rapier.js'),
+            import('external:rapier/rapier_bg.wasm'),
+        ]);
         // Tolerate both the ESM namespace and a CommonJS interop shape.
         const ns: typeof RAPIER = typeof (mod as { init?: unknown }).init === 'function'
             ? (mod as unknown as typeof RAPIER)
             : (mod as unknown as { default: typeof RAPIER }).default;
-        // The wasm is inlined in the package as base64, so init() needs no URL and never
-        // fetches; passing one is what previously produced "Only absolute URLs".
-        await ns.init();
+        // The wasm is no longer inlined as base64 (that cost ~1MB gzip over bullet).
+        // scripts/patch-rapier-package.js rewrites init() to take the wasm bytes, which are
+        // fetched through the same PAL bullet uses. Passing a URL to the stock init() is what
+        // previously produced "Only absolute URLs", so hand it bytes, never a URL.
+        const wasmBytes = await fetchBuffer(wasmUrl);
+        await (ns.init as (wasmBytes: ArrayBuffer) => Promise<void>)(wasmBytes);
         R = ns;
         rapierReady = true;
         log(`[rapier]: rapier wasm lib loaded, version ${R.version()}.`);

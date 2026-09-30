@@ -95,6 +95,7 @@ jest.mock(
     'external:emscripten/spine/4.2/spine.wasm',
     'external:emscripten/box2d/box2d.release.wasm.wasm',
     'external:emscripten/meshopt/meshopt_decoder.wasm.wasm',
+    'external:rapier/rapier_bg.wasm',
 ].forEach(mockModuleId => {
     jest.mock(mockModuleId, 
         () => ({

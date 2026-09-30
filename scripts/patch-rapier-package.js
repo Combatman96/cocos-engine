@@ -54,6 +54,20 @@ if (!fs.existsSync(source)) {
 const targetDir = path.join(__dirname, '..', 'native', 'external', 'rapier');
 const target = path.join(targetDir, 'rapier.js');
 fs.mkdirSync(targetDir, { recursive: true });
-fs.copyFileSync(source, target);
 
-console.log(`[rapier] package prepared, ESM build copied to ${path.relative(path.join(__dirname, '..'), target)}`);
+// --- 3. [size probe] strip the inlined base64 wasm, ship the wasm as a separate asset -----
+// The compat build embeds the wasm as one ~2.7MB base64 literal handed to the glue's init:
+//   function X(){return ...(function*(){yield Y({module_or_path:Z.toByteArray("<b64>").buffer})})}
+// Rewrite it so X takes the wasm bytes as an argument, then publish the raw .wasm next to it
+// as rapier_bg.wasm, which ccbuild's external loader emits as a binary asset (like bullet's).
+const inlinePattern = /function (\w+)\(\)\{(return \w+\(this,void 0,void 0,\(function\*\(\)\{yield \w+\(\{module_or_path:)\w+\.toByteArray\("[A-Za-z0-9+/=]+"\)\.buffer(\}\))/;
+const mjs = fs.readFileSync(source, 'utf8');
+if (!inlinePattern.test(mjs)) {
+    throw new Error('Rapier ESM build no longer matches the inlined-wasm pattern; update patch-rapier-package.js');
+}
+fs.writeFileSync(target, mjs.replace(inlinePattern, 'function $1(wasmBytes){$2wasmBytes$3'));
+
+const wasmSource = path.join(packageRoot, 'dist', 'rapier_wasm3d_bg.wasm');
+fs.copyFileSync(wasmSource, path.join(targetDir, 'rapier_bg.wasm'));
+
+console.log(`[rapier] package prepared, wasm-less ESM build copied to ${path.relative(path.join(__dirname, '..'), target)}`);

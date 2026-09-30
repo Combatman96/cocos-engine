@@ -42,3 +42,12 @@ declare module 'external:rapier/rapier.js' {
     export * from '@cocos/rapier3d-types';
 }
 
+/**
+ * URL of the rapier wasm binary. ccbuild emits any `external:` id ending in `.wasm` as a
+ * binary asset and resolves the import to its URL, exactly as for bullet's wasm.
+ */
+declare module 'external:rapier/rapier_bg.wasm' {
+    const url: string;
+    export default url;
+}
+
