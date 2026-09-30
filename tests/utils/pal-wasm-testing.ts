@@ -25,6 +25,7 @@
 import { checkPalIntegrity, withImpl } from '../../pal/integrity-check';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 
 export async function instantiateWasm (wasmUrl: string, importObject: WebAssembly.Imports): Promise<any> {
     return fetchBuffer(wasmUrl).then((arrayBuffer) => WebAssembly.instantiate(arrayBuffer, importObject));
@@ -37,6 +38,11 @@ export async function fetchBuffer (binaryUrl: string): Promise<ArrayBuffer> {
         const path = join(externalHome, relativePathToExternal);
         try {
             const content = readFileSync(path);
+            if (content[0] === 0x1f && content[1] === 0x8b) {
+                // The rapier wasm is stored gzipped; jsdom has no DecompressionStream, so inflate here.
+                const raw = gunzipSync(content);
+                return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+            }
             return content.buffer;
         } catch (err) {
             throw new Error(`Unable to fetch buffer from ${binaryUrl}`, { cause: error });

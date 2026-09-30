@@ -25,6 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 const packageRoot = path.join(__dirname, '..', 'node_modules', '@cocos', 'rapier3d-compat');
 const packageJsonPath = path.join(packageRoot, 'package.json');
@@ -67,7 +68,14 @@ if (!inlinePattern.test(mjs)) {
 }
 fs.writeFileSync(target, mjs.replace(inlinePattern, 'function $1(wasmBytes){$2wasmBytes$3'));
 
+// The wasm is stored gzipped (2.0MB -> 0.77MB) under the .wasm name, which is the suffix
+// ccbuild's external loader emits as a binary asset. Single-file builds base64 every asset
+// into the HTML, so shrinking the stored bytes shrinks the file on disk. instantiated.ts
+// inflates it at load time.
 const wasmSource = path.join(packageRoot, 'dist', 'rapier_wasm3d_bg.wasm');
-fs.copyFileSync(wasmSource, path.join(targetDir, 'rapier_bg.wasm'));
+fs.writeFileSync(
+    path.join(targetDir, 'rapier_bg.wasm'),
+    zlib.gzipSync(fs.readFileSync(wasmSource), { level: 9 }),
+);
 
 console.log(`[rapier] package prepared, wasm-less ESM build copied to ${path.relative(path.join(__dirname, '..'), target)}`);

@@ -80,6 +80,21 @@ export function assertRapierReady (where: string): void {
     }
 }
 
+/**
+ * The wasm asset is stored gzipped to keep single-file builds small (see
+ * scripts/patch-rapier-package.js). Inflate it with the platform's DecompressionStream.
+ * Bytes without the gzip magic are returned untouched, so a raw wasm also works.
+ */
+async function inflateIfGzip (bytes: ArrayBuffer): Promise<ArrayBuffer> {
+    const head = new Uint8Array(bytes, 0, 2);
+    if (head[0] !== 0x1f || head[1] !== 0x8b) return bytes;
+    if (typeof DecompressionStream === 'undefined') {
+        throw new Error('the rapier wasm is gzipped but this platform has no DecompressionStream');
+    }
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Response(stream).arrayBuffer();
+}
+
 let instantiationPromise: Promise<void> | undefined;
 
 /**
@@ -111,7 +126,7 @@ export function waitForRapierInstantiation (): Promise<void> {
         // scripts/patch-rapier-package.js rewrites init() to take the wasm bytes, which are
         // fetched through the same PAL bullet uses. Passing a URL to the stock init() is what
         // previously produced "Only absolute URLs", so hand it bytes, never a URL.
-        const wasmBytes = await fetchBuffer(wasmUrl);
+        const wasmBytes = await inflateIfGzip(await fetchBuffer(wasmUrl));
         await (ns.init as (wasmBytes: ArrayBuffer) => Promise<void>)(wasmBytes);
         R = ns;
         rapierReady = true;
