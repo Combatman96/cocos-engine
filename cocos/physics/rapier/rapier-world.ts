@@ -37,7 +37,7 @@ import { rapierContactForceEvents } from './extras/rapier-events';
 import { RapierSharedBody } from './rapier-shared-body';
 import { RapierContactEquation } from './rapier-contact-equation';
 import { RapierCache, CC_V3_0, CC_V3_1 } from './rapier-cache';
-import { toQueryFilterFlags, toQueryGroups } from './rapier-utils';
+import { toQueryFilterFlags } from './rapier-utils';
 import { ERapierBodyType, RAPIER_MAX_SWEEP_HITS } from './rapier-enum';
 import { R, assertRapierReady } from './instantiated';
 import type { RapierShape } from './shapes/rapier-shape';
@@ -83,7 +83,19 @@ export class RapierWorld implements IPhysicsWorld {
     private _needSyncAfterEvents = false;
     private _ray: RAPIER.Ray | null = null;
     private readonly _sweepExcluded = new Set<number>();
-    private readonly _sweepPredicate = (collider: RAPIER.Collider): boolean => !this._sweepExcluded.has(collider.handle);
+    /** Mask of the query in flight, read by `_queryPredicate`. */
+    private _queryMask = 0;
+    /**
+     * Cocos semantics: a collider is hit when `colliderGroup & mask` is non-zero. Rapier's own
+     * `InteractionGroups` test is symmetric and would also require the collider's collision
+     * mask to be non-zero, hiding layers that collide with nothing. It would also fold bits
+     * above 15, so the exact 32-bit group is tested here instead.
+     */
+    private readonly _queryPredicate = (collider: RAPIER.Collider): boolean => {
+        if (this._sweepExcluded.has(collider.handle)) return false;
+        const shape = RapierCache.getShape(collider.handle);
+        return !!shape && (shape.getGroup() & this._queryMask) !== 0;
+    };
     private _sweepBoxShape: RAPIER.Cuboid | null = null;
     private _sweepBallShape: RAPIER.Ball | null = null;
     private _sweepCapsuleShape: RAPIER.Capsule | null = null;
@@ -412,13 +424,18 @@ export class RapierWorld implements IPhysicsWorld {
     /* ---------------------------------------------------------------- queries */
 
     raycastClosest (worldRay: geometry.Ray, options: IRaycastOptions, result: PhysicsRayResult): boolean {
+        if (this._destroyed || !this._prepareRay(worldRay)) return false;
         const ray = this._makeRay(worldRay);
+        this._queryMask = options.mask;
         const hit = this._world.castRayAndGetNormal(
             ray,
             options.maxDistance,
             true, // solid: a ray starting inside a shape reports a hit at toi 0
             toQueryFilterFlags(options) as RAPIER.QueryFilterFlags,
-            toQueryGroups(options),
+            undefined,
+            undefined,
+            undefined,
+            this._queryPredicate,
         );
         if (!hit) return false;
         const shape = RapierCache.getShape(hit.collider.handle);
@@ -433,7 +450,9 @@ export class RapierWorld implements IPhysicsWorld {
         pool: RecyclePool<PhysicsRayResult>,
         results: PhysicsRayResult[],
     ): boolean {
+        if (this._destroyed || !this._prepareRay(worldRay)) return false;
         const ray = this._makeRay(worldRay);
+        this._queryMask = options.mask;
         let any = false;
         this._world.intersectionsWithRay(
             ray,
@@ -450,7 +469,10 @@ export class RapierWorld implements IPhysicsWorld {
                 return true; // keep going: collect every hit
             },
             toQueryFilterFlags(options) as RAPIER.QueryFilterFlags,
-            toQueryGroups(options),
+            undefined,
+            undefined,
+            undefined,
+            this._queryPredicate,
         );
         return any;
     }
@@ -639,13 +661,18 @@ export class RapierWorld implements IPhysicsWorld {
         return true;
     }
 
+    /** A zero-length direction has no defined ray, so it hits nothing. */
+    private _prepareRay (worldRay: geometry.Ray): boolean {
+        return Vec3.lengthSqr(worldRay.d) >= 1e-12;
+    }
+
     private _castShapeOnce (
         shape: RAPIER.Shape,
         orientation: IQuatLike,
         worldRay: geometry.Ray,
         options: IRaycastOptions,
-        usePredicate: boolean,
     ): RAPIER.ColliderShapeCastHit | null {
+        this._queryMask = options.mask;
         return this._world.castShape(
             worldRay.o as RAPIER.Vector,
             orientation as RAPIER.Rotation,
@@ -655,10 +682,10 @@ export class RapierWorld implements IPhysicsWorld {
             options.maxDistance,
             true,
             toQueryFilterFlags(options) as RAPIER.QueryFilterFlags,
-            toQueryGroups(options),
             undefined,
             undefined,
-            usePredicate ? this._sweepPredicate : undefined,
+            undefined,
+            this._queryPredicate,
         );
     }
 
@@ -670,7 +697,7 @@ export class RapierWorld implements IPhysicsWorld {
         result: PhysicsRayResult,
     ): boolean {
         if (this._destroyed || !this._prepareSweepDir(worldRay)) return false;
-        const hit = this._castShapeOnce(shape, orientation, worldRay, options, false);
+        const hit = this._castShapeOnce(shape, orientation, worldRay, options);
         if (!hit) return false;
         const wrapped = RapierCache.getShape(hit.collider.handle);
         if (!wrapped) return false;
@@ -694,11 +721,11 @@ export class RapierWorld implements IPhysicsWorld {
         this._sweepExcluded.clear();
         let any = false;
         for (let i = 0; i < RAPIER_MAX_SWEEP_HITS; i++) {
-            const hit = this._castShapeOnce(shape, orientation, worldRay, options, true);
+            const hit = this._castShapeOnce(shape, orientation, worldRay, options);
             if (!hit) break;
             this._sweepExcluded.add(hit.collider.handle);
             const wrapped = RapierCache.getShape(hit.collider.handle);
-            if (!wrapped) continue;
+            if (!wrapped || !wrapped.collider) continue;
             any = true;
             const r = pool.add();
             this._assignSweepHit(r, hit, wrapped, options.maxDistance);

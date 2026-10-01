@@ -131,18 +131,3 @@ export function scaleAlongAxis (v: IVec3Like, dir: EAxisDirection): number {
 export function toQueryFilterFlags (options: IRaycastOptions): number {
     return options.queryTrigger ? 0 : ERapierQueryFilterFlags.EXCLUDE_SENSORS;
 }
-
-/**
- * Builds the `InteractionGroups` value for a scene query.
- *
- * Membership is all-ones so that every collider's filter bits accept the query, and the
- * filter half carries the query's mask so we only hit colliders whose membership
- * intersects it.
- *
- * `IRaycastOptions.group` is intentionally ignored, matching the other backends: bullet
- * passes only `options.mask`, and cannon hardcodes `collisionFilterGroup: -1`.
- */
-export function toQueryGroups (options: IRaycastOptions): number {
-    const m = ((options.mask & 0xFFFF) | ((options.mask >>> 16) & 0xFFFF)) & 0xFFFF;
-    return ((0xFFFF << 16) | m) >>> 0;
-}
